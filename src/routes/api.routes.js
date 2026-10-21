@@ -16,6 +16,8 @@ import { createHttpExamplesRouter } from '../examples/http-examples.routes.js';
 import { createMiddlewareExamplesRouter } from '../examples/middleware-examples.routes.js';
 import { createErrorExamplesRouter } from '../examples/error-examples.routes.js';
 import { createValidationExamplesRouter } from '../examples/validation-examples.routes.js';
+// Contract registry: contract-based routes (validation + OpenAPI) isme register hote hain.
+import { createContractRegistry } from '../openapi/contract.js';
 
 // Request body ki maximum size. Isse bada body bhejne par 413 (Payload Too Large) milta hai,
 // taaki koi bahut bada body bhejkar server ki memory na kha sake.
@@ -27,9 +29,13 @@ export const BODY_LIMIT = '100kb';
  *   2. feature module routers
  *   3. teaching examples (sirf non-production mein)
  * Jo request yahan match nahi hoti wo app-level 404 handler tak jaati hai.
+ *
+ * Return: { router, contracts }. `contracts` wo saare routes hain jo contract ke saath mount hue; app.js unse
+ * OpenAPI spec banata hai, isliye docs hamesha asli routes se match karte hain.
  */
 export function createApiRouter({ config }) {
   const api = Router();
+  const registry = createContractRegistry();
 
   // Parsers routes se PEHLE hone chahiye, warna handler ko `req.body` khaali milega.
   // express.json: `Content-Type: application/json` wali body ko JS object banata hai (req.body).
@@ -53,9 +59,9 @@ export function createApiRouter({ config }) {
     // warna '/examples' wala router unke requests pehle pakad leta.
     api.use('/examples/middleware', createMiddlewareExamplesRouter());
     api.use('/examples/errors', createErrorExamplesRouter());
-    api.use('/examples/validation', createValidationExamplesRouter());
+    api.use('/examples/validation', createValidationExamplesRouter(registry));
     api.use('/examples', createHttpExamplesRouter());
   }
 
-  return api;
+  return { router: api, contracts: registry.contracts };
 }

@@ -33,6 +33,11 @@ const schema = z.object({
   // (tests mein 'silent', baaki mein 'info'), aur zod ke default ko doosri field ka pata nahi hota.
   // Isliye default neeche loadConfig() mein parse ke baad decide hota hai.
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).optional(),
+
+  // API docs (Swagger UI + /openapi.json) on hon ya off. Env var string hota hai, isliye sirf 'true'/'false'
+  // accept karte hain ("1", "yes" jaisi ambiguous values error denge). Default NODE_ENV par depend karta hai
+  // (production mein off, baaki mein on), isliye ye bhi optional hai aur default loadConfig() mein decide hota hai.
+  API_DOCS_ENABLED: z.enum(['true', 'false']).optional(),
 });
 
 // Config galat hone par ye custom error throw hota hai.
@@ -67,7 +72,7 @@ export function loadConfig(env = process.env) {
   }
 
   // Yahan tak aaye matlab saari values valid hain. `data` mein PORT ab number hai, string nahi.
-  const { NODE_ENV, HOST, PORT, LOG_LEVEL } = result.data;
+  const { NODE_ENV, HOST, PORT, LOG_LEVEL, API_DOCS_ENABLED } = result.data;
 
   // LOG_LEVEL diya hai to wahi; nahi diya to tests mein 'silent' (output saaf rahe), baaki jagah 'info'.
   // `??` = sirf undefined/null par right side use karo.
@@ -75,5 +80,10 @@ export function loadConfig(env = process.env) {
 
   // Object.freeze = object read-only ho jaata hai, taaki app mein kahin galti se config badal na jaye.
   // Keys ko readable naam diye (NODE_ENV -> env, HOST -> host...), baaki code yahi naam use karta hai.
-  return Object.freeze({ env: NODE_ENV, host: HOST, port: PORT, logLevel });
+
+  // API docs: explicitly diya hai to wahi; nahi diya to production mein band (API ka poora map attacker ko
+  // kyun dena), development/test mein on. Production mein chahiye to API_DOCS_ENABLED=true set karo.
+  const docsEnabled = API_DOCS_ENABLED ? API_DOCS_ENABLED === 'true' : NODE_ENV !== 'production';
+
+  return Object.freeze({ env: NODE_ENV, host: HOST, port: PORT, logLevel, docsEnabled });
 }

@@ -11,6 +11,8 @@ import express from 'express';
 import { createReadiness } from './health/readiness.js';
 import { createHealthRouter } from './health/health.routes.js';
 import { createApiRouter } from './routes/api.routes.js';
+import { createDocsRouter } from './docs/docs.routes.js';
+import { buildOpenApiSpec } from './openapi/build-spec.js';
 import { notFound } from './http/not-found.js';
 import { createErrorHandler } from './http/error-handler.js';
 import { createLogger } from './logging/logger.js';
@@ -89,7 +91,16 @@ export function createApp({
 
   // Saare API routes `/api/v1` ke neeche. Body parsers aur module routers is router ke andar hain
   // (src/routes/api.routes.js), isliye parsing sirf API requests par hoti hai.
-  app.use('/api/v1', createApiRouter({ config }));
+  // API router + uske contracts. Contracts se OpenAPI spec startup par ek baar banta hai.
+  const { router: apiRouter, contracts } = createApiRouter({ config });
+
+  // API docs (/openapi.json, /docs): sirf jab config.docsEnabled ho (production mein default off).
+  // API ke saamne mount hote hain taaki body parsing ke raaste se na guzarein.
+  if (config.docsEnabled) {
+    app.use(createDocsRouter({ spec: buildOpenApiSpec({ contracts }) }));
+  }
+
+  app.use('/api/v1', apiRouter);
 
   // 4. Aakhir mein 404: ye normal middleware hai (NotFoundError bana ke errorHandler ko deta hai). Yahan tak sirf wahi request pahunchti hai jise upar
   //    kisi ne handle nahi kiya. Isse upar koi route add karna hai to router ke andar karo; `createApp()` ke

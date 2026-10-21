@@ -11,6 +11,7 @@ describe('loadConfig', () => {
       host: '127.0.0.1',
       port: 3000,
       logLevel: 'info',
+      docsEnabled: true,
     });
   });
 
@@ -22,6 +23,16 @@ describe('loadConfig', () => {
     expect(loadConfig({ NODE_ENV: 'test' }).logLevel).toBe('silent');
     expect(loadConfig({ NODE_ENV: 'production' }).logLevel).toBe('info');
     expect(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'debug' }).logLevel).toBe('debug');
+  });
+
+  test('docs default to on outside production and can be overridden either way', () => {
+    expect(loadConfig({ NODE_ENV: 'development' }).docsEnabled).toBe(true);
+    expect(loadConfig({ NODE_ENV: 'test' }).docsEnabled).toBe(true);
+    expect(loadConfig({ NODE_ENV: 'production' }).docsEnabled).toBe(false);
+    expect(loadConfig({ NODE_ENV: 'production', API_DOCS_ENABLED: 'true' }).docsEnabled).toBe(true);
+    expect(loadConfig({ NODE_ENV: 'development', API_DOCS_ENABLED: 'false' }).docsEnabled).toBe(
+      false,
+    );
   });
 
   test('returns a frozen object', () => {
@@ -36,6 +47,7 @@ describe('loadConfig', () => {
     [{ PORT: '1.5' }, 'PORT'],
     [{ HOST: '' }, 'HOST'],
     [{ LOG_LEVEL: 'verbose' }, 'LOG_LEVEL'],
+    [{ API_DOCS_ENABLED: 'yes' }, 'API_DOCS_ENABLED'],
   ])('rejects invalid input %j', (env, field) => {
     expect(() => loadConfig(env)).toThrow(ConfigError);
     try {

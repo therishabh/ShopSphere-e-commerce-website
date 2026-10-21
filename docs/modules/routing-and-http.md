@@ -36,7 +36,7 @@ Plural nouns, lowercase, kebab-case for multi-word segments; the HTTP method car
 ## Params, query, body
 
 - **Path params**: identify a resource; URL-decoded by Express (`hi%20there` → `hi there`). IDs are validated by route middleware before the handler. Express 5 no longer supports inline regex in paths (`:id(\\d+)`), so validate in middleware.
-- **Query**: filtering/paging only. Express 5 uses the "simple" parser: repeated keys become arrays, `a[b]=1` stays the literal key `a[b]`. Values are strings; `validate()` routes check and convert them with Zod ([validation-and-api-contracts.md](validation-and-api-contracts.md)).
+- **Query**: filtering/paging only. Express 5 uses the "simple" parser: repeated keys become arrays, `a[b]=1` stays the literal key `a[b]`. Values are strings; contract routes validate and convert them with Zod ([validation-and-api-contracts.md](validation-and-api-contracts.md)).
 - **Body**: JSON (`application/json`) and form (`application/x-www-form-urlencoded`). `req.body` is only populated when the content type matched, so write endpoints guard with `requireJson` (415 otherwise) and use `req.body ?? {}`.
 
 ## Status-code choices
@@ -53,11 +53,11 @@ Plural nouns, lowercase, kebab-case for multi-word segments; the HTTP method car
 | 413              | Body over limit                                            |
 | 415              | Wrong `Content-Type` for the endpoint                      |
 
-Error body shape (see [error-handling.md](error-handling.md); validation details in [validation-and-api-contracts.md](validation-and-api-contracts.md)): `{ "error": { "code", "message", "details?" } }`. The 404 never echoes the requested path.
+Error body shape (see [error-handling.md](error-handling.md); validation details and contract routes in [validation-and-api-contracts.md](validation-and-api-contracts.md)): `{ "error": { "code", "message", "details?" } }`. The 404 never echoes the requested path.
 
 ## The examples router (`/api/v1/examples`)
 
-Teaching endpoints that really work against per-app in-memory data; not a business module and not mounted in production. Demonstrates: `res.send` (`/ping`), params + query (`/echo/:value`), JSON/form parsing (`/echo/json`, `/echo/form`), `res.redirect` (`/old-notes`), route ordering (`/notes/latest` before `/notes/:id`), `router.route()` chaining with `.all()` → 405, `PUT/DELETE/OPTIONS/HEAD`, route-specific middleware, and a nested router with `mergeParams` (`/notes/:noteId/comments`). The notes routes keep their simple inline Zod checks; validate()-based validation with pagination/sorting/filters is shown in `/examples/validation`.
+Teaching endpoints that really work against per-app in-memory data; not a business module and not mounted in production. Demonstrates: `res.send` (`/ping`), params + query (`/echo/:value`), JSON/form parsing (`/echo/json`, `/echo/form`), `res.redirect` (`/old-notes`), route ordering (`/notes/latest` before `/notes/:id`), `router.route()` chaining with `.all()` → 405, `PUT/DELETE/OPTIONS/HEAD`, route-specific middleware, and a nested router with `mergeParams` (`/notes/:noteId/comments`). The notes routes keep their simple inline Zod checks; contract-based validation with OpenAPI is shown in `/examples/validation`.
 
 ## How to add a new route
 

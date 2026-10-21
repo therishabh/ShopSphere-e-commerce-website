@@ -2,9 +2,7 @@
 
 ## Purpose
 
-Every request is validated by a Zod schema before any handler runs, list endpoints share one strict pagination/sorting/filtering toolkit, and responses follow a small fixed convention.
-
-> **OpenAPI + Swagger UI are not on `main`.** They live on the branch `feature/openapi-swagger` and will be merged near the end of the project (see that branch's version of this document). Everything below works without them.
+Every request is validated by a Zod schema before any handler runs, list endpoints share one strict pagination/sorting/filtering toolkit, responses follow a small fixed convention, and the OpenAPI spec is generated from the same schemas that validate requests, so docs and behaviour cannot drift.
 
 ## Request validation
 
@@ -64,42 +62,50 @@ No blanket envelope.
 | No content      | `204`, empty body                                                                             |
 | Error           | `{ "error": { "code", "message", "details?" } }` (see [error-handling.md](error-handling.md)) |
 
+## Contracts and OpenAPI
+
+A **contract** (`defineRoute` in `src/openapi/contract.js`) describes one route: method, path, request schemas, responses. `registry.mount(router, contract, handler)` is the only way contract routes are registered; it adds `validate(contract.request)` before the handler and records the contract. `buildOpenApiSpec` turns the recorded contracts into an OpenAPI 3.0.3 document using Zod 4's built-in `z.toJSONSchema` (no extra library):
+
+- Requests use `io: 'input'` (what the client sends: query values are strings with a pattern). Responses use `io: 'output'`.
+- Standard errors are added automatically: `400` (any request schema), `415` (body), `500`; authors list domain errors (`404`, `409`...). Errors reference one `ErrorResponse` component.
+- `defineRoute` fails at startup if the path's `:placeholders` and the params schema disagree.
+
+Served by `src/docs/docs.routes.js`:
+
+| URL             | What                                                                                                                                                 |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/openapi.json` | the spec (built once at startup)                                                                                                                     |
+| `/docs`         | Swagger UI from `swagger-ui-dist`, same-origin files only; the initializer is an external file so Helmet's CSP (`script-src 'self'`) works unchanged |
+
+Docs are on in development/test and **off in production** by default; `API_DOCS_ENABLED=true|false` overrides either way. Contract routes in this phase are the non-production validation examples (`/api/v1/examples/validation/demo-products`), so a production spec is empty even when docs are enabled. Phase 2–4 teaching routes (`echo`, `notes`, `middleware`, `errors`) are intentionally not contract-based and not in the spec.
+
 ## API compatibility rules (v1)
 
 - Version lives in the URL prefix (`/api/v1`). Breaking changes require `/api/v2`; v1 keeps working during a documented deprecation window (`Deprecation` and `Sunset` headers).
 - **Non-breaking (allowed in v1):** new endpoints; new optional request fields/query params; new response fields; new error codes for new situations; loosening validation.
 - **Breaking (needs v2):** removing or renaming a field/endpoint; changing a type, format or unit; making an optional input required; tightening validation of existing input; changing a status code or an error `code`; changing a default (sort order, page size).
 - Clients must ignore unknown response fields and treat enum values as open. The server rejects unknown _request_ fields, so adding an accepted field is additive.
-- Response and request schemas live in code (`*.schemas.js`); a schema change is the contract change, so review it as one.
+- A spec change ships in the same change as the schema change (they are one source), and the contract tests must pass unchanged for non-breaking changes.
 
-## How to add a validated route
+## How to add a validated, documented route
 
-1. Define schemas in `<module>.schemas.js` (`z.strictObject`; list queries via `buildListQuerySchema`).
-2. `router.post('/path', validate({ params, query, body }), handler)`.
-3. In the handler read `res.locals.valid`, never raw `req.*`.
+1. Define schemas in `<module>.schemas.js` (`z.strictObject`).
+2. `const contract = defineRoute({ method, basePath, path, operationId, summary, tags, request, responses })`.
+3. `registry.mount(router, contract, handler)`; read `res.locals.valid`.
 4. Throw `AppError`s for domain failures (`NotFoundError`, `ConflictError`).
-5. Verify manually (see below) and update this doc and the matrix.
-
-## Manual verification (repeatable)
-
-```bash
-npm run dev
-B=localhost:3000/api/v1/examples/validation/demo-products
-curl "$B?category=shoes&sort=-price&limit=2"                      # 200, items + pagination
-curl "$B?limit=0&role=admin&sort=password"                        # 400, 3 details (limit, unknown key, sort)
-curl -X POST $B -H 'content-type: application/json' -d '{"sku":"X1","role":"admin"}'   # 400, details per field
-curl $B/not-a-uuid                                                # 400, source params
-```
+5. Tests: valid, each invalid class, unknown field, bounds, and `assertMatchesContract(contract, res)` for every response.
 
 ## Files
 
-`src/http/validate.js`, `src/http/schemas.js`, `src/http/query/{fields,pagination,sorting,list-query}.js`, `src/errors/zod-details.js`, `src/modules/products/products.schemas.js`, `src/examples/validation-examples.routes.js`.
+`src/http/validate.js`, `src/http/schemas.js`, `src/http/query/{fields,pagination,sorting,list-query}.js`, `src/errors/zod-details.js`, `src/openapi/{contract,build-spec}.js`, `src/docs/docs.routes.js`, `src/modules/products/products.schemas.js`, `src/examples/validation-examples.routes.js`.
 
-## Tests (existing, no new tests are being written)
+## Tests
 
-`npm test` → `tests/unit/{query-helpers,validate-middleware}.test.js`, `tests/integration/validation.test.js`.
+`npm test` → `tests/unit/{query-helpers,validate-middleware,openapi}.test.js`, `tests/integration/{validation,api-docs}.test.js`; `tests/helpers/contract.js` checks every real response against its documented status and schema.
 
 ## Tradeoffs
 
 - The demo list uses in-memory data; its normalized query is exactly what Phase 9 passes to Prisma.
-- No generated API documentation on `main` yet: request/response shapes are documented here and in the schemas. The OpenAPI/Swagger layer exists on `feature/openapi-swagger`.
+- The spec describes request input as strings with patterns (what is on the wire) rather than integers, so generated clients treat numbers in the query as strings.
+- Only contract routes appear in the spec; adding a feature module means adding its contracts, otherwise it is undocumented.
+- Swagger UI is verified in a real browser (loads under the Helmet CSP, lists the three operations); there is no automated browser test.

@@ -1,20 +1,68 @@
 // Validation + API conventions ka teaching/demo router (`/api/v1/examples/validation/...`). Real products
 // module NAHI hai (wo Phase 9 mein). Production mein mount nahi hota.
 //
-// Ye demo end-to-end dikhata hai: Zod schemas -> validate() middleware -> handler jo sirf *validated* data
-// use karta hai. Data in-memory demo list hai; handler ka kaam wahi hai jo baad mein repository karega,
-// lekin sach mein koi product business logic nahi hai.
+// Ye demo end-to-end dikhata hai: contract (schemas) -> validate middleware -> handler jo sirf *validated* data
+// use karta hai -> response jo contract ke schema se match karta hai. Data in-memory demo list hai; handler ka
+// kaam wahi hai jo baad mein repository karega, lekin sach mein koi product business logic nahi hai.
 
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { ConflictError, NotFoundError } from '../errors/app-errors.js';
-import { validate } from '../http/validate.js';
 import { buildPagination } from '../http/query/pagination.js';
 import {
   createProductBodySchema,
   productIdParamsSchema,
   productListQuerySchema,
+  productListResponseSchema,
+  productSchema,
 } from '../modules/products/products.schemas.js';
+import { defineRoute } from '../openapi/contract.js';
+
+const BASE_PATH = '/examples/validation';
+const TAGS = ['Validation examples'];
+
+// Contracts: har route ka poora description. Inhi se route register hota hai aur OpenAPI banta hai.
+export const listDemoProducts = defineRoute({
+  method: 'get',
+  basePath: BASE_PATH,
+  path: '/demo-products',
+  operationId: 'listDemoProducts',
+  summary: 'List demo products (pagination, sorting, filters, search)',
+  tags: TAGS,
+  request: { query: productListQuerySchema },
+  responses: { 200: { description: 'A page of products', schema: productListResponseSchema } },
+});
+
+export const getDemoProduct = defineRoute({
+  method: 'get',
+  basePath: BASE_PATH,
+  path: '/demo-products/:productId',
+  operationId: 'getDemoProduct',
+  summary: 'Get one demo product by UUID',
+  tags: TAGS,
+  request: { params: productIdParamsSchema },
+  responses: {
+    200: { description: 'The product', schema: productSchema },
+    404: { description: 'Product not found' },
+  },
+});
+
+export const createDemoProduct = defineRoute({
+  method: 'post',
+  basePath: BASE_PATH,
+  path: '/demo-products',
+  operationId: 'createDemoProduct',
+  summary: 'Create a demo product (strict body validation)',
+  tags: TAGS,
+  request: { body: createProductBodySchema },
+  responses: {
+    201: {
+      description: 'Created; Location header points to the new product',
+      schema: productSchema,
+    },
+    409: { description: 'SKU already exists' },
+  },
+});
 
 // Demo data: kuch fixed products taaki filters/sort/pagination ke results dekhe ja sakein.
 function seedProducts() {
@@ -56,13 +104,12 @@ function applyListQuery(all, query) {
   return { items: rows.slice(query.offset, query.offset + query.limit), total };
 }
 
-export function createValidationExamplesRouter() {
+/** @param {{mount: Function}} registry createContractRegistry() */
+export function createValidationExamplesRouter(registry) {
   const products = seedProducts();
   const router = Router();
 
-  // GET /demo-products?page=&limit=&sort=&q=&category=&minPrice=&maxPrice=&inStock=
-  // validate() handler se pehle chalta hai; galat query yahin 400 ke saath ruk jaati hai.
-  router.get('/demo-products', validate({ query: productListQuerySchema }), (_req, res) => {
+  registry.mount(router, listDemoProducts, (_req, res) => {
     // res.locals.valid.query = validate() ke baad ka normalized data (raw req.query nahi).
     const query = res.locals.valid.query;
     const { items, total } = applyListQuery(products, query);
@@ -72,19 +119,13 @@ export function createValidationExamplesRouter() {
     });
   });
 
-  // GET /demo-products/:productId (productId UUID hona chahiye)
-  router.get(
-    '/demo-products/:productId',
-    validate({ params: productIdParamsSchema }),
-    (_req, res) => {
-      const product = products.find((p) => p.id === res.locals.valid.params.productId);
-      if (!product) throw new NotFoundError('Product not found');
-      res.json(product);
-    },
-  );
+  registry.mount(router, getDemoProduct, (_req, res) => {
+    const product = products.find((p) => p.id === res.locals.valid.params.productId);
+    if (!product) throw new NotFoundError('Product not found');
+    res.json(product);
+  });
 
-  // POST /demo-products: body strict (extra field reject), JSON content type zaruri.
-  router.post('/demo-products', validate({ body: createProductBodySchema }), (req, res) => {
+  registry.mount(router, createDemoProduct, (req, res) => {
     const input = res.locals.valid.body;
     if (products.some((p) => p.sku === input.sku)) throw new ConflictError('SKU already exists');
     // id aur createdAt server decide karta hai (body strict hai, client ye fields bhej hi nahi sakta).

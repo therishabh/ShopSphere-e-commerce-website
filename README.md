@@ -4,7 +4,7 @@ Multi-vendor e-commerce backend (customers, sellers, admins). Express 5 + ESM Ja
 
 > Ye README poora project guide hai: kya banaya, kis sequence mein, kyun, aur code kaise kaam karta hai. Har phase ke baad update hoti hai. Naye developer ya fresher ko sirf ise padh ke project aur uska code samajh aa jana chahiye, aur isi ko recipe ki tarah follow karke doosra project bhi banaya ja sake.
 
-**Current status: Phase 5 complete** (foundation, routing, middleware, centralized errors, aur validation + API conventions: Zod `validate()`, pagination/sort/filter toolkit). **OpenAPI + Swagger UI `main` par nahi hain**: wo branch `feature/openapi-swagger` par hain aur project ke end mein merge honge. Business endpoints (auth, products, orders) abhi nahi bane; module routers khaali hain.
+**Current status: Phase 5 complete** (foundation, routing, middleware, centralized errors, aur ab validation + API contracts: Zod `validate()`, pagination/sort/filter toolkit, OpenAPI spec aur Swagger UI). Business endpoints (auth, products, orders) abhi nahi bane; module routers khaali hain.
 
 ---
 
@@ -46,7 +46,7 @@ Poori file ek saath padhna zaruri nahi. Apne goal ke hisaab se path chuno:
    - [Phase 2 — HTTP fundamentals aur routing](#phase-2--http-fundamentals-aur-routing)
    - [Phase 3 — Middleware pipeline aur request context](#phase-3--middleware-pipeline-aur-request-context)
    - [Phase 4 — Centralized error handling](#phase-4--centralized-error-handling)
-   - [Phase 5 — Validation aur API conventions](#phase-5--validation-aur-api-conventions)
+   - [Phase 5 — Validation, API contracts aur OpenAPI](#phase-5--validation-api-contracts-aur-openapi)
 8. [Current project structure](#8-current-project-structure)
 9. [Run kaise karein (setup, scripts)](#9-run-kaise-karein-setup-scripts)
 10. [Verification results (ab tak)](#10-verification-results-ab-tak)
@@ -98,11 +98,12 @@ curl localhost:3000/health/ready
 curl -i localhost:3000/api/v1/examples/ping       # X-Request-Id + security headers dekho; server terminal mein JSON log line
 
 curl 'localhost:3000/api/v1/examples/validation/demo-products?category=shoes&sort=-price&limit=2'   # validated list
+# Browser mein: http://localhost:3000/docs/  (Swagger UI), http://localhost:3000/openapi.json
 
 curl -X POST localhost:3000/api/v1/examples/notes -H 'content-type: application/json' -d '{"text":"hello"}'
 # {"id":1,"text":"hello"}   (201, Location header ke saath)
 
-npm test                    # 390 tests, ~1-2 sec
+npm test                    # 429 tests, ~1-2 sec
 ```
 
 Aage ka detail section 9 mein hai.
@@ -161,9 +162,10 @@ Is order mein files kholo; har step pichle step par build hota hai. Har source f
 | 9   | `src/http/route-guards.js`                                                                 | Reusable route-specific middleware (415, 400, 405)                                                     |
 | 10  | `src/errors/app-errors.js`, `to-app-error.js`, `src/http/error-handler.js`, `not-found.js` | Error hierarchy, thrown value ki classification, aur central safe response + logging                   |
 | 11  | `src/http/validate.js`, `src/http/query/*.js`, `src/http/schemas.js`                       | Zod validation middleware, strict query helpers, pagination/sorting allowlist, shared response schemas |
-| 12  | `src/modules/products/products.schemas.js`                                                 | DTO schemas ka representative set (list query, id params, create body, response)                       |
-| 13  | `src/examples/*.routes.js`                                                                 | HTTP, middleware, error aur validation concepts ke working demos; comments mein concept naam likha hai |
-| 14  | `tests/**` (+ `tests/helpers/`)                                                            | Behaviour ka spec; examples/tests se hi seekhna sabse tez hai                                          |
+| 12  | `src/openapi/contract.js`, `build-spec.js`, `src/docs/docs.routes.js`                      | Contract (route + validation + docs ek source se), OpenAPI spec generation, Swagger UI                 |
+| 13  | `src/modules/products/products.schemas.js`                                                 | DTO schemas ka representative set (list query, id params, create body, response)                       |
+| 14  | `src/examples/*.routes.js`                                                                 | HTTP, middleware, error aur validation concepts ke working demos; comments mein concept naam likha hai |
+| 15  | `tests/**` (+ `tests/helpers/`)                                                            | Behaviour ka spec; examples/tests se hi seekhna sabse tez hai                                          |
 
 ### 5.2 Ek request ka poora safar
 
@@ -201,7 +203,7 @@ Response band hone par requestLogger ek JSON line likhta hai:
 
 Dhyaan do: body, query, headers, cookies ya path-param values us log line mein kabhi nahi aate.
 
-Validated routes (Phase 5, e.g. `/examples/validation/demo-products`) mein route aur handler ke beech `validate({ params, query, body })` lagta hai: galat input yahin 400 ke saath rukta hai aur handler tak nahi pahunchta; sahi input `res.locals.valid` mein normalized milta hai.
+Contract-based routes (Phase 5, e.g. `/examples/validation/demo-products`) mein route aur handler ke beech `validate({ params, query, body })` lagta hai: galat input yahin 400 ke saath rukta hai aur handler tak nahi pahunchta; sahi input `res.locals.valid` mein normalized milta hai.
 
 Agar kahin error ho (throw, rejected Promise ya `next(err)`), Express normal middleware skip karke seedha sabse last wale `errorHandler` par aata hai (section 7, Phase 4); wahi ek safe response banata hai.
 
@@ -267,6 +269,8 @@ Sirf wo concepts jo ab tak code mein use hue hain. Naye phases ke concepts us ph
 | **Sort allowlist (map)**                          | `{ apiName: dbColumn }`; user sirf apiName bhej sakta hai, DB column hamesha map se aata hai, user string se nahi. Isse arbitrary column selection/injection band.                                                               |
 | **Offset vs cursor pagination**                   | Offset (`page`/`limit`) simple hai aur total deta hai, par deep pages slow aur data badalne par unstable. Deep/infinite lists ke liye cursor (keyset) baad mein.                                                                 |
 | **DTO (Data Transfer Object)**                    | API ka request/response shape, database model se alag; DB badle to API na tute. `src/modules/<m>/<m>.schemas.js`.                                                                                                                |
+| **Contract (`defineRoute`)**                      | Ek route ka poora description (method, path, request schemas, responses). Isi se Express route (validation ke saath) aur OpenAPI spec dono bante hain, to docs aur behaviour alag nahi ho sakte.                                 |
+| **OpenAPI / Swagger UI**                          | OpenAPI = API ka machine-readable description (`/openapi.json`); Swagger UI = usse browser mein dikhane wala page (`/docs`). Production mein default off.                                                                        |
 | **Interim**                                       | Abhi ke liye kaafi, baad ke phase mein replace (e.g. Phase 2 ka `clientErrorHandler` Phase 4 mein central `errorHandler` se replace hua).                                                                                        |
 | **Modular monolith**                              | Ek deployable app, andar alag modules (auth, products, ...). Microservices nahi.                                                                                                                                                 |
 | **Mock provider**                                 | Payment/email ke test-safe fake adapters; real credentials kabhi nahi.                                                                                                                                                           |
@@ -823,75 +827,119 @@ app.use(createErrorHandler({ logger }));
 
 Result: 183/183 tests pass, lint aur format clean.
 
-### Phase 5 — Validation aur API conventions
+### Phase 5 — Validation, API contracts aur OpenAPI
 
-**Goal:** har request Zod schema se controller se pehle validate ho; list endpoints ke liye ek shared strict pagination/sorting/filtering toolkit (allowlist ke saath); aur chhota fixed response convention. Product business logic nahi.
-
-> **Note:** playbook ke is phase mein OpenAPI + Swagger UI bhi tha. Owner ke decision se wo `main` par nahi hai: wo alag branch **`feature/openapi-swagger`** par pushed hai (poora kaam aur tests ke saath), aur project ke end mein merge hoga. Merge karne ke steps niche "Step 12" mein hain.
+**Goal:** har request Zod schema se controller se pehle validate ho; list endpoints ke liye ek shared strict pagination/sorting/filtering toolkit (allowlist ke saath); chhota fixed response convention; aur OpenAPI spec + Swagger UI jo asli routes/validation se hi bane (drift na ho). Product business logic nahi.
 
 Design decisions:
 
-- **Strict by default:** har request schema `z.strictObject`, query values strict string patterns (coerce nahi).
-- **Allowlist map:** sorting mein user sirf API naam bhej sakta hai; DB column hamesha developer ke map se aata hai.
+- **Contract-first:** ek `defineRoute(...)` object se Express route (validation ke saath) aur OpenAPI spec dono bante hain. Spec alag likhi hui nahi hai, isliye asli behaviour se alag ho hi nahi sakti.
+- **Alag OpenAPI library nahi:** Zod 4 mein `z.toJSONSchema(..., { target: 'openapi-3.0' })` built-in hai.
 - **Product list sirf demo:** real products module Phase 9 mein; abhi schemas `src/modules/products/` mein hain aur ek non-production demo router unhe use karta hai (in-memory sample data).
+
+**OpenAPI aur `contract.js` simple bhasha mein (pehle ye padho):**
+
+- **Problem:** ek route ke liye 3 cheezein chahiye: route ka code, validation rules, aur API docs (frontend/QA ke liye "ye route kya leta hai, kya lautata hai"). Teeno alag likhoge to ek din validation badal jayegi aur docs purani reh jayegi.
+- **OpenAPI** = API ko describe karne ka standard JSON format (URLs, methods, inputs, outputs, errors). **Swagger UI** = us JSON ko webpage mein dikhane wala tool (`/docs`), jahan bina code padhe API dekh aur try kar sakte ho. Frontend dev, QA aur doosri teams isi se kaam karti hain.
+- **Contract** = ek route ka poora description ek hi object mein (`defineRoute`, `src/openapi/contract.js`). Example (real code `src/examples/validation-examples.routes.js` mein hai):
+
+```js
+const createProduct = defineRoute({
+  method: 'post',
+  basePath: '/examples/validation',
+  path: '/demo-products',
+  request: { body: createProductBodySchema },          // validation rules (Zod)
+  responses: { 201: { ... }, 409: { description: 'SKU already exists' } },
+});
+
+registry.mount(router, createProduct, handler);
+```
+
+- `registry.mount(...)` ek saath 3 kaam karta hai: (1) Express route register, (2) handler se pehle validation lagana, (3) contract ko ek list (`registry.contracts`) mein jama karna. `createContractRegistry()` bas wahi list + `mount` function deta hai (registry = jama karne wali list).
+- Phir `src/openapi/build-spec.js` us list se `/openapi.json` banata hai. Isliye validation aur docs **ek hi source** se aate hain: dono alag ho hi nahi sakte. (Jaise restaurant ka menu seedha kitchen ke order system se print ho, haath se alag likha hua nahi.)
+
+```
+defineRoute(...)  ->  registry.mount(...)  ->  1. Express route + validation (asli request handle)
+   (ek contract)                           ->  2. contracts list  ->  build-spec.js  ->  /openapi.json  ->  /docs (Swagger UI)
+```
+
+Dekhne ka tareeka: `npm run dev` chalao aur browser mein `http://localhost:3000/docs/` kholo; wahan 3 routes dikhenge, "Try it out" se request bhej sakte ho. Ye layer optional jaisi lagti hai, lekin iske bina docs haath se likhni padti hain aur purani ho jaati hain.
 
 Sequence:
 
-**Step 1 — `validate()` middleware (`src/http/validate.js`).**
+**Step 1 — Dependencies (exact pinned).**
+
+```bash
+npm install --save-exact swagger-ui-dist@5.34.0
+npm install --save-dev --save-exact @seriousme/openapi-schema-validator@2.11.0   # tests mein spec validate karne ke liye
+```
+
+Pehle ek probe se confirm kiya ki Zod 4 ka `toJSONSchema` `io: 'input'` aur `target: 'openapi-3.0'` ke saath sahi JSON Schema deta hai (strictObject -> `additionalProperties: false`).
+
+**Step 2 — Config: `API_DOCS_ENABLED`.** `'true' | 'false'` string; default NODE_ENV se: production mein off, baaki mein on. `config.docsEnabled`.
+
+**Step 3 — `validate()` middleware (`src/http/validate.js`).**
 
 ```js
 router.post('/demo-products', validate({ body: createProductBodySchema }), handler);
 ```
 
-params/query/body teeno `safeParse` hote hain; saari galtiyan ek saath `ValidationError` ke `details: [{ source, path, message }]` mein. Validated data `res.locals.valid.{params,query,body}` mein milta hai, kyunki Express 5 mein `req.query` read-only hai. Body schema ho to `Content-Type: application/json` zaruri (warna 415). Shared helper `src/errors/zod-details.js` ZodError ko details mein badalta hai (`to-app-error.js` bhi use karta hai).
+params/query/body teeno `safeParse` hote hain; saari galtiyan ek saath `ValidationError` ke `details: [{ source, path, message }]` mein. Validated data `res.locals.valid.{params,query,body}` mein milta hai, kyunki Express 5 mein `req.query` read-only hai. Body schema ho to `Content-Type: application/json` zaruri (warna 415). Shared helper `src/errors/zod-details.js` ZodError ko details mein badalta hai.
 
-**Step 2 — Query field helpers (`src/http/query/fields.js`).** `intString`, `booleanString`, `searchTerm`, `slug`. `z.coerce.number()` / `z.coerce.boolean()` jaan-boojh ke nahi use kiye: coerce `""`, `" 5 "`, `"1e3"` ko chupchaap number bana deta hai aur `"false"` ko `true`. Hum pehle strict regex lagate hain, phir convert.
+**Step 4 — Query field helpers (`src/http/query/fields.js`).** `intString`, `booleanString`, `searchTerm`, `slug`. `z.coerce.number()` / `z.coerce.boolean()` jaan-boojh ke nahi use kiye: coerce `""`, `" 5 "`, `"1e3"` ko chupchaap number bana deta hai aur `"false"` ko `true`. Hum pehle strict regex lagate hain, phir convert (isse OpenAPI mein input side sahi `string + pattern` dikhta hai).
 
-**Step 3 — Pagination (`pagination.js`).** Offset strategy: `page` (1..10000, default 1), `limit` (1..100, default 20); `resolvePagination` offset nikalta hai; `buildPagination` response block banata hai. Cursor kyun nahi: offset simple hai aur total count deta hai; deep lists ke liye cursor baad mein per-endpoint (trade-off docs mein).
+**Step 5 — Pagination (`pagination.js`).** Offset strategy: `page` (1..10000, default 1), `limit` (1..100, default 20); `resolvePagination` offset nikalta hai; `buildPagination` response block banata hai. Cursor ko kyun nahi: offset simple hai aur total count deta hai; deep lists ke liye cursor baad mein per-endpoint (trade-off docs mein).
 
-**Step 4 — Sorting allowlist (`sorting.js`).**
+**Step 6 — Sorting allowlist (`sorting.js`).**
 
 ```js
 export const PRODUCT_SORTABLE = { price: 'priceCents', createdAt: 'createdAt', name: 'name' };
 // ?sort=-price,name  ->  [{ field:'price', column:'priceCents', direction:'desc' }, { field:'name', ... }]
 ```
 
-Allowlist ek **map** hai (API naam -> DB column). Output mein sirf mapped column aata hai, isliye `sort=password`, `price;DROP TABLE`, `__proto__` sab regex par hi reject. Max 3 fields, duplicates nahi.
+Allowlist ek **map** hai (API naam -> DB column). Output mein sirf mapped column aata hai, user ka string kabhi nahi, isliye `sort=password`, `price;DROP TABLE`, `__proto__` sab regex par hi reject. Max 3 fields, duplicates nahi. Wahi regex OpenAPI docs mein jaata hai.
 
-**Step 5 — List query builder (`list-query.js`).** `buildListQuerySchema({ sortable, defaultSort, filters, search, checkFilters })` ek strictObject banata hai (unknown query key = 400) aur normalized query deta hai: `{ page, limit, offset, sort, q?, filters }`. Cross-field rule (`minPrice <= maxPrice`) `checkFilters` mein. Default sort bhi allowlist ke against build time par check hota hai.
+**Step 7 — List query builder (`list-query.js`).** `buildListQuerySchema({ sortable, defaultSort, filters, search, checkFilters })` ek strictObject banata hai (unknown query key = 400) aur normalized query deta hai: `{ page, limit, offset, sort, q?, filters }`. Cross-field rule (`minPrice <= maxPrice`) `checkFilters` mein. Default sort bhi allowlist ke against build time par check hota hai.
 
-**Step 6 — Product DTO schemas (`src/modules/products/products.schemas.js`).** `productListQuerySchema`, `productIdParamsSchema` (UUID), `createProductBodySchema` (`z.strictObject`: `id`, `role`, `createdAt` jaise extra fields reject = mass-assignment protection), `productSchema`/`productListResponseSchema` (response DTO). Money integer minor units (`priceCents`), dates ISO string.
+**Step 8 — Product DTO schemas (`src/modules/products/products.schemas.js`).** `productListQuerySchema`, `productIdParamsSchema` (UUID), `createProductBodySchema` (`z.strictObject`: `id`, `role`, `createdAt` jaise extra fields reject = mass-assignment protection), `productSchema`/`productListResponseSchema` (response DTO). Money integer minor units (`priceCents`), dates ISO string.
 
-**Step 7 — Response convention (`src/http/schemas.js`).** Blanket envelope nahi: single resource = bare object (`201` + `Location` create par); collection = `{ items, pagination }`; `204` empty; error = `{ error: { code, message, details? } }`.
+**Step 9 — Response convention (`src/http/schemas.js`).** Blanket envelope nahi: single resource = bare object (`201` + `Location` create par); collection = `{ items, pagination }`; `204` empty; error = `{ error: { code, message, details? } }`. `errorResponseSchema` aur `listResponseSchema(item)` yahin.
 
-**Step 8 — Demo router (`src/examples/validation-examples.routes.js`).** Teen routes: `GET /demo-products` (list), `GET /demo-products/:productId` (UUID), `POST /demo-products` (create, duplicate SKU = 409). In-memory 12 sample products; `applyListQuery` normalized query ko filter/sort/slice karta hai (wahi kaam jo Phase 9 mein Prisma karegi). `api.routes.js` ise non-production mein `/examples/validation` par mount karta hai.
+**Step 10 — Contracts + registry (`src/openapi/contract.js`).** `defineRoute` method/path/request/responses leta hai, standard errors (400, 415, 500) khud jodta hai, aur startup par check karta hai ki path ke `:placeholders` aur params schema match karte hain. `registry.mount(router, contract, handler)` hi route register karne ka tareeka hai: wo `validate(contract.request)` handler se pehle lagata hai aur contract record karta hai.
 
-**Step 9 — Existing tests (naye nahi).** Is phase ke tests (`query-helpers`, `validate-middleware`, `validation`) naya rule aane se pehle likhe gaye the; ab se naye tests nahi likhe jaate. Mutation checks se dekha ki safety pieces sach mein tests pakadte hain: sort regex hataya -> 27 fail; product body `strictObject` -> `object` -> 8 fail; `validate()` hataya -> ~100 fail; `booleanString` ko `z.coerce.boolean()` -> 11 fail; JSON content-type guard hataya -> 3 fail. (Seekh: mutation script mein hamesha assert lagao ki replace hua, Prettier ne ek baar line format badal di thi aur mutation silently apply nahi hui.)
+**Step 11 — Spec builder (`src/openapi/build-spec.js`).** Contracts -> OpenAPI 3.0.3: query/path params schema se, `requestBody`, responses (errors ek shared `ErrorResponse` component se). Request side `io: 'input'`, response side `io: 'output'`. Do bugs mile aur fix hue: (a) `ErrorResponse` par `.meta({ id })` se `$ref/definitions` aa gaya aur validator ne spec invalid bola, `id` hataya; (b) `$schema` key hataya.
 
-**Step 10 — Real server smoke (repeatable).**
+**Step 12 — Demo router (`src/examples/validation-examples.routes.js`).** Teen contract routes: `GET /demo-products` (list), `GET /demo-products/:productId` (UUID), `POST /demo-products` (create, duplicate SKU = 409). In-memory 12 sample products; `applyListQuery` normalized query ko filter/sort/slice karta hai (wahi kaam jo Phase 9 mein Prisma karegi).
 
-```bash
-npm run dev
-B=localhost:3000/api/v1/examples/validation/demo-products
-curl "$B?category=shoes&sort=-price&limit=2"                   # 200, items + pagination
-curl "$B?limit=0&role=admin&sort=password"                     # 400, 3 details (limit, unknown key, sort)
-curl -X POST $B -H 'content-type: application/json' -d '{"sku":"X1","role":"admin"}'   # 400, field-wise details
-curl $B/not-a-uuid                                             # 400, source params
-```
+**Step 13 — Docs router + wiring (`src/docs/docs.routes.js`, `app.js`).** `/openapi.json` aur `/docs` (Swagger UI, `swagger-ui-dist` ki same-origin files). Swagger ka starter script alag file (`/docs/swagger-initializer.js`, `../openapi.json` ko point karta) taaki Helmet ki `script-src 'self'` CSP bina dheele chale. `createApiRouter` ab `{ router, contracts }` return karta hai; app.js contracts se spec banata hai aur sirf `config.docsEnabled` par docs mount karta hai.
 
-**Step 11 — Docs aur matrix.** `docs/modules/validation-and-api-contracts.md` (validation, DTO strategy, pagination/sorting/filtering rules, response convention, API compatibility rules, naya route kaise add karein). Matrix section 5 ke 8 rows `verified`; "OpenAPI spec" aur "Swagger UI" `planned` (branch par bane hain).
+**Step 14 — Tests (+246, total 429 tests, 15 suites).** Naye test files mein comments nahi (naya rule).
 
-**Step 12 — OpenAPI + Swagger branch mein kaise gaya (aur baad mein kaise milega).** Pehle poora Phase 5 (OpenAPI ke saath) ek temporary branch par save kiya, phir `main` par OpenAPI-free version banake commit kiya, phir `main` ke upar `feature/openapi-swagger` banayi jisme sirf OpenAPI/Swagger ke changes hain (`src/openapi/`, `src/docs/`, contract-based demo routes, `API_DOCS_ENABLED`, 2 dependencies, unke tests aur docs). Project ke end mein:
+| File                                     | Kya prove karta hai                                                                                                                                                                                                                                    |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tests/unit/query-helpers.test.js`       | `intString`/`booleanString`/`searchTerm`/`slug` ki accepted aur rejected values; sort allowlist (injection, `__proto__`, duplicates, max 3, unsafe allowlist); pagination offset/metadata; list builder (unknown key, bounds, filters, `checkFilters`) |
+| `tests/unit/validate-middleware.test.js` | validated values `res.locals.valid` mein, raw req untouched, saare sources ki galtiyan ek saath, nested paths, unknown key, missing body, 415                                                                                                          |
+| `tests/unit/openapi.test.js`             | `defineRoute` checks aur auto errors, `mount` Express route register karta hai, spec valid OpenAPI 3.0 (validator), params/body/responses                                                                                                              |
+| `tests/integration/validation.test.js`   | pagination/sort/filter/search ke asli results; 35 invalid query shapes; invalid ids; invalid body (23 shapes, unexpected fields, wrong types, bounds), 409, 415, malformed JSON; bare resource / `{items,pagination}` / `{error}` shapes               |
+| `tests/integration/api-docs.test.js`     | `/openapi.json` valid; documented params/body fields wahi hain jo validator sach mein accept/require karta hai; har documented operation reachable; docs CSP-safe; production mein docs off, override on                                               |
+| `tests/helpers/contract.js`              | har real response ka status documented hona chahiye aur body response schema se match (extra undocumented field bhi pakda jata hai)                                                                                                                    |
 
-```bash
-git checkout main
-git merge feature/openapi-swagger     # conflicts ho to: README/matrix/validation doc/demo router mein
-npm ci && npm test
-```
+Ek test finding: top-level JSON jaise `"hello"` ya `42` Express ka JSON parser (strict mode) `400 BAD_REQUEST` se hi reject kar deta hai, validation tak pahunchta hi nahi; test ko usi expectation par rakha.
 
-Us branch par README (Phase 5 ka OpenAPI explainer, contract.js ka kaam, `/docs` ka use) aur doc already hain. Naye routes jo tab tak main par plain `router.get(..., validate(...), handler)` se bane honge, unhe `defineRoute` contracts mein badalna padega.
+**Step 15 — Mutation checks (chhe).**
 
-Result (main): 390/390 existing tests pass, lint aur format clean.
+- Sort regex hataya (koi bhi string allowlist se nikal jaye) -> 27 fail. (Pehli koshish mein replace silently apply nahi hua tha kyunki Prettier ne line format badal di thi; assertion ke saath dobara karne par fail aaya. Seekh: mutation script mein hamesha assert lagao ki replace hua.)
+- Product body `strictObject` -> `object` -> 8 fail.
+- `mount` se `validate()` hataya -> 100 fail.
+- Docs production mein default on -> 4 fail.
+- `booleanString` ko `z.coerce.boolean()` -> 11 fail.
+- JSON content-type guard hataya -> 3 fail.
+
+**Step 16 — Real server aur browser smoke.** curl: filters+sort+limit sahi items; `?limit=0&role=admin&sort=password` -> 400 with 3 details; galat POST body -> 400 with field-wise details. **Swagger UI asli Chrome mein khola** (`/docs/`): Helmet CSP ke saath load hua, 3 operations aur `ErrorResponse` schema dikhe.
+
+**Step 17 — Docs aur matrix.** `docs/modules/validation-and-api-contracts.md` (validation, DTO strategy, pagination/sorting/filtering rules, response convention, OpenAPI, API compatibility rules, naya route kaise add karein). Matrix section 5 ke 10 rows `verified`.
+
+Result: 429/429 tests pass, lint aur format clean.
 
 ## 8. Current project structure
 
@@ -914,14 +962,16 @@ Result (main): 390/390 existing tests pass, lint aur format clean.
 │   ├── routes/api.routes.js      # /api/v1: parsers + module mounts (+ examples, non-prod)
 │   ├── modules/<name>/<name>.routes.js   # auth users sellers products cart orders admin (empty, mounted)
 │   ├── errors/                   # app-errors.js (hierarchy), to-app-error.js (classification), zod-details.js
+│   ├── openapi/                  # contract.js (defineRoute + registry), build-spec.js (OpenAPI generation)
+│   ├── docs/docs.routes.js       # /openapi.json + /docs (Swagger UI)
 │   ├── http/                     # error-handler.js, not-found.js, route-guards.js, validate.js, schemas.js
 │   │   └── query/                # fields.js, pagination.js, sorting.js, list-query.js
 │   └── examples/                 # teaching only, /api/v1/examples/*, non-prod: http-examples, middleware-examples, error-examples, validation-examples
 ├── public/example.txt            # served at /static
 ├── tests/
-│   ├── helpers/log-capture.js    # Pino ko memory mein capture (tests)
-│   ├── unit/        config, readiness, middleware-units, errors, query-helpers, validate-middleware .test.js
-│   └── integration/ health, server, routing, static, middleware, error-handling, validation .test.js
+│   ├── helpers/                  # log-capture.js (Pino memory mein), contract.js (response vs contract)
+│   ├── unit/        config, readiness, middleware-units, errors, query-helpers, validate-middleware, openapi .test.js
+│   └── integration/ health, server, routing, static, middleware, error-handling, validation, api-docs .test.js
 └── docs/
     ├── architecture/ (overview.md, phases.md, decisions/)
     ├── coverage/EXPRESS_CONCEPT_MATRIX.md
@@ -949,7 +999,7 @@ npm run dev             # http://127.0.0.1:3000/health/ready
 | `npm run lint`                    | ESLint                                                         |
 | `npm run format` / `format:check` | Prettier write / check                                         |
 
-Environment variables: `NODE_ENV` (`development\|test\|production`, default `development`), `HOST` (default `127.0.0.1`), `PORT` (default `3000`, `0` = ephemeral), `LOG_LEVEL` (`trace|debug|info|warn|error|fatal|silent`; default `info`, tests mein `silent`).
+Environment variables: `NODE_ENV` (`development\|test\|production`, default `development`), `HOST` (default `127.0.0.1`), `PORT` (default `3000`, `0` = ephemeral), `LOG_LEVEL` (`trace|debug|info|warn|error|fatal|silent`; default `info`, tests mein `silent`), `API_DOCS_ENABLED` (`true|false`; default: production mein `false`, baaki mein `true`).
 
 Endpoints abhi:
 
@@ -961,17 +1011,18 @@ Endpoints abhi:
 | `/api/v1/{auth,users,sellers,products,cart,orders,admin}/*`   | `404` abhi (modules khaali)                                                                                                                            |
 | `/api/v1/examples/*`                                          | Teaching endpoints (non-production only): `ping`, `echo/:value`, `echo/json`, `echo/form`, `old-notes`, `notes`, `notes/:id`, `notes/:noteId/comments` |
 | `/api/v1/examples/middleware/*`                               | Middleware demos (non-production only): `chain`, `conditional`, `guarded`, `fail`, `app-config`, `stats`                                               |
-| `/api/v1/examples/validation/demo-products` (+ `/:productId`) | Validation demo (non-production only): `GET` list (page, limit, sort, filters, q), `GET` by UUID, `POST` create. In-memory sample data                 |
+| `/api/v1/examples/validation/demo-products` (+ `/:productId`) | Contract-based demo (non-production only): `GET` list (page, limit, sort, filters, q), `GET` by UUID, `POST` create. In-memory sample data             |
+| `/openapi.json`, `/docs/`                                     | OpenAPI spec aur Swagger UI (development/test mein on, production mein default off)                                                                    |
 | `/api/v1/examples/errors/*`                                   | Error demos (non-production only): `raise/:kind`, `sync-throw`, `async-reject`, `next-err`, `throw-string`, `service/*`, `after-headers`               |
 | anything else                                                 | `404 {"error":{"code":"NOT_FOUND","message":"Resource not found"}}`                                                                                    |
 
 ## 10. Verification results (ab tak)
 
-Phase 5 ke end par (main) actual run hue commands (pichhle phases ke checks bhi included):
+Phase 5 ke end par actual run hue commands (pichhle phases ke checks bhi included):
 
 | Command                                                       | Result                                                         |
 | ------------------------------------------------------------- | -------------------------------------------------------------- |
-| `npm test`                                                    | 13 suites, 390 tests passed                                    |
+| `npm test`                                                    | 15 suites, 429 tests passed                                    |
 | `npm run lint`                                                | clean                                                          |
 | `npm run format:check`                                        | clean                                                          |
 | `node src/server.js` + curl (`/health/live`, `/health/ready`) | dono 200; SIGTERM par exit                                     |
@@ -979,7 +1030,7 @@ Phase 5 ke end par (main) actual run hue commands (pichhle phases ke checks bhi 
 | `npm audit --omit=dev`                                        | 0 vulnerabilities                                              |
 | `npm audit`                                                   | dev-only (Jest chain) moderate advisories, fix apply nahi kiya |
 
-Phase 5 extras (main): paanch mutation checks (sort regex hataya -> 27 fail; product body strict -> object -> 8 fail; `validate()` hataya -> ~100 fail; `coerce.boolean` -> 11 fail; JSON content-type guard hataya -> 3 fail); curl smoke (valid list, 400 details). OpenAPI/Swagger ki verification (spec validator, asli Chrome mein Swagger UI) branch `feature/openapi-swagger` par hui hai.
+Phase 5 extras: chhe mutation checks (sort regex hataya -> 27 fail; product body strict -> object -> 8 fail; `validate()` unmount -> 100 fail; docs prod default on -> 4 fail; `coerce.boolean` -> 11 fail; JSON content-type guard hataya -> 3 fail; restore par 429/429); Swagger UI asli Chrome mein load hua (CSP ke saath, 3 operations dikhe); curl smoke (valid list, 400 details, `/openapi.json` + `/docs/` 200); OpenAPI spec `@seriousme/openapi-schema-validator` se valid.
 
 Phase 4 extras: chaar mutation checks (`headersSent` guard hataya -> 2 fail; 500 body mein asli message -> 11 fail; error handler unmount -> 50 fail; unexpected error `warn` par -> 7 fail; restore par 183/183); real server smoke (dev: generic 500s, 409, 429, truncated `after-headers`; production: 404/400 safe, logs mein `"stack"` 0).
 
@@ -993,40 +1044,40 @@ Environment-dependent checks (Postgres, Redis, Docker) abhi applicable nahi.
 
 ## 11. Roadmap (Phase 0–25)
 
-| #   | Phase                                                                   | Status  |
-| --- | ----------------------------------------------------------------------- | ------- |
-| 0   | Guardrails                                                              | done    |
-| 1   | Foundation (app/server, config, health)                                 | done    |
-| 2   | HTTP & routing (`/api/v1`, params/query/body, static, 404)              | done    |
-| 3   | Middleware pipeline, request IDs, `res.locals`, `req.app`               | done    |
-| 4   | Error handling (hierarchy, `headersSent`)                               | done    |
-| 5   | Validation, pagination (OpenAPI + Swagger: branch par, baad mein merge) | done    |
-| 6   | PostgreSQL + Prisma, migrations, repositories, transactions             | next    |
-| 7   | Authentication (hashing, refresh rotation, verify/reset)                | planned |
-| 8   | Authorization, ownership, sessions, CSRF                                | planned |
-| 9   | Catalog, inventory concurrency, reviews, wishlists                      | planned |
-| 10  | Cart, checkout, idempotency, order state machine                        | planned |
-| 11  | Security hardening + threat model                                       | planned |
-| 12  | Uploads (Multer), storage adapters, CSV streaming                       | planned |
-| 13  | Redis caching + benchmarks                                              | planned |
-| 14  | BullMQ worker, retries, outbox                                          | planned |
-| 15  | Webhooks (signature, idempotency)                                       | planned |
-| 16  | OAuth2 / OIDC (PKCE, state, nonce)                                      | planned |
-| 17  | Socket.IO realtime + notifications                                      | planned |
-| 18  | Test strategy, coverage, CI                                             | planned |
-| 19  | Observability + graceful shutdown                                       | planned |
-| 20  | Docker, Nginx, worker_threads, scaling                                  | planned |
-| 21  | Express concept lab (+ Express 4 compat lab)                            | planned |
-| 22  | Mongoose lab                                                            | planned |
-| 23  | Docs audit                                                              | planned |
-| 24  | Concept coverage audit                                                  | planned |
-| 25  | Release gate                                                            | planned |
+| #   | Phase                                                       | Status  |
+| --- | ----------------------------------------------------------- | ------- |
+| 0   | Guardrails                                                  | done    |
+| 1   | Foundation (app/server, config, health)                     | done    |
+| 2   | HTTP & routing (`/api/v1`, params/query/body, static, 404)  | done    |
+| 3   | Middleware pipeline, request IDs, `res.locals`, `req.app`   | done    |
+| 4   | Error handling (hierarchy, `headersSent`)                   | done    |
+| 5   | Validation, pagination, OpenAPI + Swagger                   | done    |
+| 6   | PostgreSQL + Prisma, migrations, repositories, transactions | next    |
+| 7   | Authentication (hashing, refresh rotation, verify/reset)    | planned |
+| 8   | Authorization, ownership, sessions, CSRF                    | planned |
+| 9   | Catalog, inventory concurrency, reviews, wishlists          | planned |
+| 10  | Cart, checkout, idempotency, order state machine            | planned |
+| 11  | Security hardening + threat model                           | planned |
+| 12  | Uploads (Multer), storage adapters, CSV streaming           | planned |
+| 13  | Redis caching + benchmarks                                  | planned |
+| 14  | BullMQ worker, retries, outbox                              | planned |
+| 15  | Webhooks (signature, idempotency)                           | planned |
+| 16  | OAuth2 / OIDC (PKCE, state, nonce)                          | planned |
+| 17  | Socket.IO realtime + notifications                          | planned |
+| 18  | Test strategy, coverage, CI                                 | planned |
+| 19  | Observability + graceful shutdown                           | planned |
+| 20  | Docker, Nginx, worker_threads, scaling                      | planned |
+| 21  | Express concept lab (+ Express 4 compat lab)                | planned |
+| 22  | Mongoose lab                                                | planned |
+| 23  | Docs audit                                                  | planned |
+| 24  | Concept coverage audit                                      | planned |
+| 25  | Release gate                                                | planned |
 
 Detail: [docs/architecture/phases.md](docs/architecture/phases.md).
 
 ## 12. Concept coverage matrix ka status
 
-[docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md): 235 concepts. Abhi sections 1 (Foundation, 7), 2 (HTTP & routing, 14), 3 (Middleware, 14) 4 (Error handling, 9) aur 5 (Validation & API contracts, 8 of 10) `verified` (52 concepts); section 5 ke "OpenAPI spec" aur "Swagger UI" `planned` hain (branch `feature/openapi-swagger`); baaki sab `planned`. Har phase ke baad sirf evidence-backed rows update hote hain.
+[docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md): 235 concepts. Abhi sections 1 (Foundation, 7), 2 (HTTP & routing, 14), 3 (Middleware, 14) 4 (Error handling, 9) aur 5 (Validation & API contracts, 10) `verified` (54 concepts); baaki sab `planned`. Har phase ke baad sirf evidence-backed rows update hote hain.
 
 ## 13. Is project ko recipe ki tarah reuse karna
 
@@ -1052,14 +1103,18 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 ka reusable sequence:
 18. Express 5 mein async handlers par wrapper mat lagao. `res.headersSent` check karke default handler ko delegate karo.
 19. Validation: har request schema `z.strictObject`; `validate({params, query, body})` handler se pehle; handler sirf `res.locals.valid` padhe. Query ke liye `z.coerce` nahi, strict string-first helpers.
 20. List endpoints: ek `buildListQuerySchema` (page/limit offset, sort allowlist **map**, filters allowlist, search) jo normalized query de; DB column kabhi user string se nahi.
+21. Contract-first: `defineRoute` + `registry.mount` se route aur OpenAPI ek source se; Zod 4 ka `z.toJSONSchema` use karo, alag library nahi. Spec ko validator se test karo aur har real response ko contract schema se match karo.
+22. Swagger UI ke liye `swagger-ui-dist` same-origin + external initializer file, taaki Helmet CSP na dheeli karni pade. Docs production mein default off.
 
 ## 14. Known limitations / tradeoffs
 
 - Graceful shutdown abhi minimal hai (server close + readiness 503). Request draining with deadline aur ordered dependency close Phase 19 mein.
 - `/health/ready` abhi koi real dependency check nahi karta (koi dependency hai hi nahi); DB check Phase 6 mein.
-- Validation errors 400 hain (422 nahi), `details` entries `{source?, path, message}`; purane teaching routes (notes, echo) abhi simple inline Zod use karte hain.
-- **OpenAPI + Swagger UI `main` par nahi hain** (owner ka decision: abhi development par focus). Wo branch `feature/openapi-swagger` par pushed hain; merge steps Phase 5 ke Step 12 mein.
+- Validation errors 400 hain (422 nahi), `details` entries `{source?, path, message}`; purane teaching routes (notes, echo) abhi simple inline Zod use karte hain, contract-based nahi.
+- OpenAPI spec mein sirf contract routes hain (abhi sirf `/examples/validation/*`, non-production). Phase 2-4 ke teaching routes spec mein nahi hain; naye feature modules ko apne contracts add karne honge, warna undocumented rahenge.
+- Query params spec mein strings (pattern ke saath) dikhte hain, integers nahi (wire par wahi jaata hai); generated clients ko ye dhyaan rakhna.
 - Offset pagination deep pages par slow hai (`page` max 10000); cursor pagination abhi nahi bani.
+- Swagger UI asli browser mein manually verify hui; automated browser test nahi hai.
 - DB/driver errors abhi sab generic 500 hain; known DB errors (unique violation -> `ConflictError`) ka mapping Phase 6 mein repository boundary par.
 - Unexpected-error logs mein asli error message aata hai; Pino redaction sirf known keys ko cover karti hai, to error messages secrets se mat banao.
 - Rate limiting, authentication/authorization errors ke classes bane hain lekin unhe throw karne wale features aage ke phases mein.
@@ -1089,9 +1144,10 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 ka reusable sequence:
 | Mera `X-Request-Id` badal gaya                                      | Sirf `[A-Za-z0-9._-]{8,128}` accept hota hai; chhota/lamba/special chars wala ID replace hota hai (log injection se bachne ke liye).                                                                                                                                                                                                   |
 | Logs mein full URL/params kyun nahi dikhte?                         | Intentional: route pattern + request ID log hota hai; query/path-param values mein tokens ho sakte hain. Debug ke liye request ID se context dhundo.                                                                                                                                                                                   |
 | `app.get(...)` `createApp()` ke baad lagaya, 404 aa raha hai        | 404 handler pehle registered hai; late routes tak request pahunchti hi nahi. Route router ke andar add karo.                                                                                                                                                                                                                           |
-| Naya validated route kaise add karun?                               | `docs/modules/validation-and-api-contracts.md` ka "How to add a validated route": schema (`z.strictObject`) -> `router.x(path, validate({...}), handler)` -> handler `res.locals.valid` padhe -> manual verification (curl) likho.                                                                                                     |
+| Naya validated + documented route kaise add karun?                  | `docs/modules/validation-and-api-contracts.md` ka "How to add a validated, documented route": schema -> `defineRoute` -> `registry.mount` -> handler `res.locals.valid` padhe -> `assertMatchesContract` ke saath tests.                                                                                                               |
 | `?limit=10abc` ya `?page=1&page=2` 400 kyun deta hai?               | Query values strict string patterns se check hoti hain (`z.coerce` nahi) aur repeated keys arrays banti hain jo string schema fail karte hain.                                                                                                                                                                                         |
 | Request mein extra field bhejne par 400 kyun?                       | Schemas `z.strictObject` hain; unknown field reject hota hai (mass-assignment se bachne ke liye). Naya field accept karna ho to schema mein add karo (non-breaking change).                                                                                                                                                            |
+| `/docs` production mein 404 kyun?                                   | `API_DOCS_ENABLED` default production mein `false` hai. Chahiye to `API_DOCS_ENABLED=true`.                                                                                                                                                                                                                                            |
 | `sort=password` jaisi cheez kaise rokta hai?                        | Sort allowlist map hai (`{price: 'priceCents', ...}`) aur uska regex sirf allowed naam accept karta hai; DB column hamesha map se aata hai.                                                                                                                                                                                            |
 | Naya error type kaise add karun?                                    | `src/errors/app-errors.js` mein `AppError` extend karo (status + stable `code`), service/handler mein `throw` karo. Handler mein kuch nahi badalna. Detail: `docs/modules/error-handling.md`.                                                                                                                                          |
 | Production mein 500 par kuch detail kyun nahi milta?                | By design: client ko generic message. Asli error + stack server log mein `unexpected error` line (`level: 50`) mein hai; response header `X-Request-Id` se wo line dhundo.                                                                                                                                                             |

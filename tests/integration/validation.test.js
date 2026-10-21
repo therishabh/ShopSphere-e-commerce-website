@@ -1,24 +1,12 @@
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config/env.js';
-import { errorResponseSchema } from '../../src/http/schemas.js';
 import {
-  productListResponseSchema,
-  productSchema,
-} from '../../src/modules/products/products.schemas.js';
-import { expect } from '@jest/globals';
-
-const listDemoProducts = { 200: productListResponseSchema };
-const getDemoProduct = { 200: productSchema };
-const createDemoProduct = { 201: productSchema };
-
-function assertMatchesContract(schemasByStatus, res) {
-  const schema = res.status >= 400 ? errorResponseSchema : schemasByStatus[res.status];
-  expect(schema).toBeDefined();
-  const parsed = schema.safeParse(res.body);
-  expect(parsed.error?.issues).toBeUndefined();
-  expect(parsed.data).toEqual(res.body);
-}
+  createDemoProduct,
+  getDemoProduct,
+  listDemoProducts,
+} from '../../src/examples/validation-examples.routes.js';
+import { assertMatchesContract } from '../helpers/contract.js';
 
 const BASE = '/api/v1/examples/validation/demo-products';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
