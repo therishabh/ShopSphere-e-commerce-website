@@ -11,7 +11,7 @@ Single source of truth for what is actually done. Every concept named in the [pl
 5. Documentation links point to the page the owning phase will create; a link is valid only after that phase lands.
 6. Phase 24 audits every row. Phase 25 must not report "all concepts complete" unless every row is `verified`.
 
-**Current state: Phase 1 complete. Section 1 is `verified`; every other concept is `planned`.**
+**Current state: Phase 2 complete. Sections 1–2 are `verified`; every other concept is `planned`.**
 
 Note: the `/health/ready` row is verified against fake dependency checks; the database-backed check is tracked under Persistence (Phase 6).
 
@@ -31,20 +31,20 @@ Note: the `/health/ready` row is verified against fake dependency checks; the da
 
 | Concept | Implementation / demo | Test / verification | Documentation | Status |
 | --- | --- | --- | --- | --- |
-| Modular routers under `/api/v1` | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| Route modules: auth, users, sellers, products, cart, orders, admin | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| Route params | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| Query params | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| JSON body parsing | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| URL-encoded parsing | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| HTTP methods and status codes | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| `res.status` / `res.json` / `res.send` / `res.redirect` | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| Route ordering | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| Nested routers | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| Route-specific middleware | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| Safe 404 response | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| `express.static` example | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
-| REST naming conventions | — | — | [routing-and-http.md](../modules/routing-and-http.md) | planned |
+| Modular routers under `/api/v1` | `src/routes/api.routes.js` | `tests/integration/routing.test.js` | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| Route modules: auth, users, sellers, products, cart, orders, admin | `src/modules/*/*.routes.js` (empty, mounted) | `tests/integration/routing.test.js` (each module 404s, no fake endpoints) | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| Route params | `src/examples/http-examples.routes.js` (`/echo/:value`, `/notes/:id`) | `tests/integration/routing.test.js` | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| Query params | `src/examples/http-examples.routes.js` (`/echo/:value`, `/notes?limit`) | `tests/integration/routing.test.js` | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| JSON body parsing | `src/routes/api.routes.js`, `/echo/json` | `tests/integration/routing.test.js` (parse, malformed 400, 415, 413) | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| URL-encoded parsing | `src/routes/api.routes.js`, `/echo/form` | `tests/integration/routing.test.js` | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| HTTP methods and status codes | `src/examples/http-examples.routes.js` (notes CRUD, 405, OPTIONS, HEAD) | `tests/integration/routing.test.js` | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| `res.status` / `res.json` / `res.send` / `res.redirect` | `src/examples/http-examples.routes.js` (`/ping`, `/old-notes`, notes) | `tests/integration/routing.test.js` | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| Route ordering | `/notes/latest` before `/notes/:id`; mount order in `src/app.js` | `tests/integration/routing.test.js` (mutation-checked) | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| Nested routers | `/notes/:noteId/comments` (`mergeParams`) | `tests/integration/routing.test.js` | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| Route-specific middleware | `src/http/route-guards.js` | `tests/integration/routing.test.js` | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| Safe 404 response | `src/http/not-found.js` | `tests/integration/routing.test.js`, `tests/integration/static.test.js` | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| `express.static` example | `src/app.js`, `public/example.txt` | `tests/integration/static.test.js` | [routing-and-http.md](../modules/routing-and-http.md) | verified |
+| REST naming conventions | `docs/modules/routing-and-http.md`, notes example | `tests/integration/routing.test.js` | [routing-and-http.md](../modules/routing-and-http.md) | verified |
 
 ## 3. Middleware (Phase 3)
 

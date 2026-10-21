@@ -4,7 +4,7 @@ Multi-vendor e-commerce backend (customers, sellers, admins). Express 5 + ESM Ja
 
 > Ye README poora project guide hai. Har phase ke baad update hoti hai: kya banaya, kis sequence mein, kyun, aur kaunse commands/snippets use hue. Sirf ise padh ke poora project samajh aa jana chahiye, aur isi ko recipe ki tarah follow karke doosra project bhi banaya ja sake.
 
-**Current status: Phase 1 complete** (foundation: config, app/server split, health endpoints). Business endpoints (auth, products, orders) abhi nahi bane.
+**Current status: Phase 2 complete** (foundation + `/api/v1` routing, parsing, status codes, static, safe 404). Business endpoints (auth, products, orders) abhi nahi bane; module routers khaali hain.
 
 ---
 
@@ -16,6 +16,7 @@ Multi-vendor e-commerce backend (customers, sellers, admins). Express 5 + ESM Ja
 4. [Build Log (phase by phase)](#4-build-log-phase-by-phase)
    - [Phase 0 — Guardrails aur docs skeleton](#phase-0--guardrails-aur-docs-skeleton)
    - [Phase 1 — Application foundation](#phase-1--application-foundation)
+   - [Phase 2 — HTTP fundamentals aur routing](#phase-2--http-fundamentals-aur-routing)
 5. [Current project structure](#5-current-project-structure)
 6. [Run kaise karein (setup, scripts)](#6-run-kaise-karein-setup-scripts)
 7. [Verification results (ab tak)](#7-verification-results-ab-tak)
@@ -288,6 +289,119 @@ npm install --save-exact dotenv      # 18.0.8
 
 Result: 23/23 tests pass, lint aur format clean.
 
+### Phase 2 — HTTP fundamentals aur routing
+
+**Goal:** `/api/v1` ke neeche modular routers, request parsing, HTTP methods/status codes, safe 404, static assets, aur sab concepts ka tested demo. Business endpoints nahi (wo apne phase mein).
+
+Design decision jo pehle liya: "fake business endpoints nahi" aur "concepts demonstrate karne hain" dono saath chahiye the. Isliye:
+
+- 7 module routers (**auth, users, sellers, products, cart, orders, admin**) valid aur mounted hain, lekin **khaali** (URL space reserved, koi endpoint nahi).
+- Concepts ek alag `/api/v1/examples` router mein dikhaye, jo sach mein kaam karta hai (per-app in-memory notes), clearly labelled hai, aur **production mein mount nahi hota**.
+
+Sequence:
+
+**Step 1 — Module routers (7 files).** Har module `src/modules/<name>/<name>.routes.js` mein `create<Name>Router()` export karta hai jo bas `Router()` return karta hai.
+
+```js
+export function createAuthRouter() {
+  return Router();
+}
+```
+
+**Step 2 — `/api/v1` router (`src/routes/api.routes.js`) aur uska order.**
+
+```js
+export const BODY_LIMIT = '100kb';
+
+export function createApiRouter({ config }) {
+  const api = Router();
+  api.use(express.json({ limit: BODY_LIMIT }));
+  api.use(express.urlencoded({ extended: false, limit: BODY_LIMIT }));
+
+  api.use('/auth', createAuthRouter());
+  /* users, sellers, products, cart, orders, admin ... */
+
+  if (config.env !== 'production') api.use('/examples', createHttpExamplesRouter());
+  return api;
+}
+```
+
+Parsers sirf `/api/v1` ke andar hain (health/static par parsing ka cost nahi), explicit size limit hai, `extended: false` se nested-object expansion nahi hota.
+
+**Step 3 — App mein deliberate mount order (`src/app.js`).**
+
+```js
+app.use('/health', createHealthRouter(readiness));
+app.use('/static', express.static(PUBLIC_DIR, { index: false, dotfiles: 'ignore', maxAge: '1h' }));
+app.use('/api/v1', createApiRouter({ config }));
+app.use(notFound);
+app.use(clientErrorHandler);
+```
+
+Order: `health -> static -> /api/v1 (parsers + modules) -> 404 -> error handler`. Static ke liye `public/example.txt` banaya; directory index band, dotfiles ignore, traversal 404.
+
+**Step 4 — Safe 404 (`src/http/not-found.js`).** Fixed JSON body `{error:{code:'NOT_FOUND', message:'Resource not found'}}`; requested path echo nahi hota.
+
+**Step 5 — 4xx errors ka interim handler (`src/http/client-errors.js`).** Problem: malformed JSON, oversized body ya undecodable URL param par Express ka default handler non-production mein stack trace wala HTML deta. Isliye chhota handler jo sirf 4xx ko fixed message ke saath JSON mein map karta hai; baaki errors `next(err)` se aage jaate hain.
+
+```js
+export function clientErrorHandler(err, _req, res, next) {
+  const status = err.status ?? err.statusCode;
+  if (res.headersSent || !Number.isInteger(status) || status < 400 || status > 499)
+    return next(err);
+  const message =
+    err.type === 'entity.parse.failed' ? 'Malformed request body' : STATUS_CODES[status];
+  res.status(status).json({ error: { code: CODES[status] ?? 'CLIENT_ERROR', message } });
+}
+```
+
+Ye interim hai; Phase 4 ise central error hierarchy se replace karega.
+
+**Step 6 — Route-specific middleware (`src/http/route-guards.js`).** `requireJson` (415), `requireUrlEncoded`, `requireNumericParam(name)` (400), `methodNotAllowed(allowed)` (405 + `Allow`, `OPTIONS` ko 204).
+Express 5 gotcha: `path-to-regexp` v8 mein inline regex (`/:id(\\d+)`) support nahi hai, isliye numeric id ki validation middleware mein ki.
+
+**Step 7 — Examples router (`src/examples/http-examples.routes.js`).** Har endpoint ek concept dikhata hai:
+
+| Endpoint                             | Concept                                                                            |
+| ------------------------------------ | ---------------------------------------------------------------------------------- |
+| `GET /ping`                          | `res.type().send()`                                                                |
+| `GET /echo/:value?x=1&x=2`           | route params (URL-decoded) + query (repeated key = array, `a[b]` expand nahi hota) |
+| `POST /echo/json`, `POST /echo/form` | JSON / urlencoded parsing + route-level `requireJson` / `requireUrlEncoded`        |
+| `GET /old-notes`                     | `res.redirect(301, ...)` fixed target (open redirect nahi)                         |
+| `GET /notes/latest`                  | route ordering: `/notes/:id` se **pehle** register                                 |
+| `/notes` GET, POST                   | list (`?limit`), create `201` + `Location`                                         |
+| `/notes/:id` GET, PUT, DELETE        | `200`, replace, `204`; missing `404`; bad id `400`                                 |
+| `/notes/:noteId/comments`            | nested router (`mergeParams: true`)                                                |
+
+`router.route()` se methods group kiye aur end mein `.all(methodNotAllowed([...]))`, jo tabhi chalta hai jab pehle koi method handler match na kare:
+
+```js
+router
+  .route('/notes')
+  .get(listNotes)
+  .post(requireJson, createNote) // 201 + Location
+  .all(methodNotAllowed(['GET', 'POST'])); // 405 + Allow
+```
+
+Body validation ke liye abhi inline Zod (`z.strictObject({ text: z.string().trim().min(1).max(200) })`) use hua (unexpected field reject); shared validation layer Phase 5 mein aayegi. Store har `createHttpExamplesRouter()` call par fresh banta hai, isliye tests isolated rehte hain.
+
+**Step 8 — Probe: pehle behaviour dekha, phir assertions likhe.** Ek temporary script se malformed URI, path traversal, dotfile, empty JSON body, bracket query/form wagairah ke asli responses dekhe (e.g. traversal = 404, malformed URI = 400, empty JSON body = `{}`), taaki tests guess par na bane.
+
+**Step 9 — Tests (+58, total 81 tests, 6 suites).**
+
+| File                                | Kya cover hota hai                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/integration/routing.test.js` | 404 (unknown/other method/`/api/v2`, path reflect nahi), malformed URI `400`, har empty module `404`, production mein examples `404`, params/query, JSON/form parsing (malformed `400`, `415`, `413`), notes CRUD status codes, validation errors, bad id, `405` + `Allow`, `OPTIONS`/`HEAD`, route ordering, per-app state, nested comments, redirect, mount-order checks |
+| `tests/integration/static.test.js`  | file + headers, missing file JSON 404, no directory index, dotfile aur path traversal blocked, POST ignore                                                                                                                                                                                                                                                                 |
+
+**Step 10 — Mutation check.** Pehli baar mein sab tests pass hue, isliye ordering test ko verify kiya: `/notes/latest` ko `/notes/:id` ke baad le jaane par test fail hua (1 failed), original restore par 81/81 pass. Matlab test sach mein ordering pakadta hai.
+
+**Step 11 — Real server smoke.** `POST /api/v1/examples/notes` -> `201` + `Location: /api/v1/examples/notes/1`; `GET` wapas `200`; `/static/example.txt` -> `200 text/plain`; `/api/v1/auth/login` -> `404`; `/old-notes` -> `301`; `DELETE /notes` -> `405`.
+
+**Step 12 — Docs aur matrix.** `docs/modules/routing-and-http.md` (mount order, naming, params/query/body, status codes, naya route kaise add karein). Matrix ke section 2 ke 14 rows exact test paths ke saath `verified`.
+
+Result: 81/81 tests pass, lint aur format clean.
+
 ## 5. Current project structure
 
 ```
@@ -301,20 +415,25 @@ Result: 23/23 tests pass, lint aur format clean.
 │   ├── app.js                    # createApp(): Express app factory
 │   ├── server.js                 # startServer(), main(), signals
 │   ├── config/env.js             # loadConfig(), ConfigError
-│   └── health/
-│       ├── readiness.js          # createReadiness()
-│       └── health.routes.js      # /health/live, /health/ready
+│   ├── health/
+│   │   ├── readiness.js          # createReadiness()
+│   │   └── health.routes.js      # /health/live, /health/ready
+│   ├── routes/api.routes.js      # /api/v1: parsers + module mounts (+ examples, non-prod)
+│   ├── modules/<name>/<name>.routes.js   # auth users sellers products cart orders admin (empty, mounted)
+│   ├── http/                     # not-found.js, client-errors.js, route-guards.js
+│   └── examples/http-examples.routes.js  # teaching endpoints, /api/v1/examples, non-prod only
+├── public/example.txt            # served at /static
 ├── tests/
 │   ├── unit/        config.test.js, readiness.test.js
-│   └── integration/ health.test.js, server.test.js
+│   └── integration/ health, server, routing, static .test.js
 └── docs/
     ├── architecture/ (overview.md, phases.md, decisions/)
     ├── coverage/EXPRESS_CONCEPT_MATRIX.md
-    ├── modules/application-foundation.md
+    ├── modules/ application-foundation.md, routing-and-http.md
     └── runbooks/ security/ testing/   # abhi sirf index
 ```
 
-Planned: `src/worker.js`, `src/modules/<module>/`, `prisma/`, `labs/`, `deploy/`. Layout Phase 2+ mein evolve ho sakta hai.
+Planned: `src/worker.js`, `prisma/`, `labs/`, `deploy/`. Layout Phase 2+ mein evolve ho sakta hai.
 
 ## 6. Run kaise karein (setup, scripts)
 
@@ -338,24 +457,30 @@ Environment variables: `NODE_ENV` (`development\|test\|production`, default `dev
 
 Endpoints abhi:
 
-| Endpoint            | Response                                                                                                 |
-| ------------------- | -------------------------------------------------------------------------------------------------------- |
-| `GET /health/live`  | `200 {"status":"live"}`                                                                                  |
-| `GET /health/ready` | `200 {"status":"ready","checks":{}}`, ya `503 {"status":"not_ready" \| "shutting_down", "checks":{...}}` |
+| Endpoint                                                    | Response                                                                                                                                               |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /health/live`                                          | `200 {"status":"live"}`                                                                                                                                |
+| `GET /health/ready`                                         | `200 {"status":"ready","checks":{}}`, ya `503` (`not_ready` / `shutting_down`)                                                                         |
+| `GET /static/example.txt`                                   | `200 text/plain` (`express.static`, `public/`)                                                                                                         |
+| `/api/v1/{auth,users,sellers,products,cart,orders,admin}/*` | `404` abhi (modules khaali)                                                                                                                            |
+| `/api/v1/examples/*`                                        | Teaching endpoints (non-production only): `ping`, `echo/:value`, `echo/json`, `echo/form`, `old-notes`, `notes`, `notes/:id`, `notes/:noteId/comments` |
+| anything else                                               | `404 {"error":{"code":"NOT_FOUND","message":"Resource not found"}}`                                                                                    |
 
 ## 7. Verification results (ab tak)
 
-Phase 1 ke end par actual run hue commands:
+Phase 2 ke end par actual run hue commands (Phase 1 ke checks bhi included):
 
 | Command                                                       | Result                                                         |
 | ------------------------------------------------------------- | -------------------------------------------------------------- |
-| `npm test`                                                    | 4 suites, 23 tests passed                                      |
+| `npm test`                                                    | 6 suites, 81 tests passed                                      |
 | `npm run lint`                                                | clean                                                          |
 | `npm run format:check`                                        | clean                                                          |
 | `node src/server.js` + curl (`/health/live`, `/health/ready`) | dono 200; SIGTERM par exit                                     |
 | `npm run dev` + temp `.env`                                   | `.env` load hua, `/health/ready` 200                           |
 | `npm audit --omit=dev`                                        | 0 vulnerabilities                                              |
 | `npm audit`                                                   | dev-only (Jest chain) moderate advisories, fix apply nahi kiya |
+
+Phase 2 extras: ordering test ka mutation check (order badalne par 1 test fail, restore par pass); real server par curl smoke (201+Location, static 200, 301, 405, module 404).
 
 Environment-dependent checks (Postgres, Redis, Docker) abhi applicable nahi.
 
@@ -365,8 +490,8 @@ Environment-dependent checks (Postgres, Redis, Docker) abhi applicable nahi.
 | --- | ----------------------------------------------------------- | ------- |
 | 0   | Guardrails                                                  | done    |
 | 1   | Foundation (app/server, config, health)                     | done    |
-| 2   | HTTP & routing (`/api/v1`, params/query/body, static, 404)  | next    |
-| 3   | Middleware pipeline, request IDs, `res.locals`, `req.app`   | planned |
+| 2   | HTTP & routing (`/api/v1`, params/query/body, static, 404)  | done    |
+| 3   | Middleware pipeline, request IDs, `res.locals`, `req.app`   | next    |
 | 4   | Error handling (hierarchy, `headersSent`)                   | planned |
 | 5   | Validation, pagination, OpenAPI + Swagger                   | planned |
 | 6   | PostgreSQL + Prisma, migrations, repositories, transactions | planned |
@@ -394,11 +519,11 @@ Detail: [docs/architecture/phases.md](docs/architecture/phases.md).
 
 ## 9. Concept coverage matrix ka status
 
-[docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md): 235 concepts. Abhi section 1 (Foundation, 7 concepts) `verified`; baaki sab `planned`. Har phase ke baad sirf evidence-backed rows update hote hain.
+[docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md): 235 concepts. Abhi sections 1 (Foundation, 7) aur 2 (HTTP & routing, 14) `verified` (21 concepts); baaki sab `planned`. Har phase ke baad sirf evidence-backed rows update hote hain.
 
 ## 10. Is project ko recipe ki tarah reuse karna
 
-Naye Express 5 project ke liye Phase 0 + 1 ka reusable sequence:
+Naye Express 5 project ke liye Phase 0 + 1 + 2 ka reusable sequence:
 
 1. Pehle `CLAUDE.md` + docs skeleton + coverage matrix banao (rules aur tracking pehle, code baad mein).
 2. `npm init`, `"type": "module"`, `engines` set karo; dependencies `--save-exact`; lockfile commit.
@@ -408,26 +533,32 @@ Naye Express 5 project ke liye Phase 0 + 1 ka reusable sequence:
 6. Health: `live` (dependency-free) aur `ready` (named checks + timeout + shutdown flag) alag rakho; DB/Redis aate hi unke checks register karo.
 7. Tests: unit (config, readiness), integration (Supertest on app, real-port server test, invalid-config subprocess test).
 8. Manual smoke (curl + SIGTERM + dev script), `npm audit --omit=dev`, phir docs/README/matrix update.
+9. Routing: har feature ka `src/modules/<name>/<name>.routes.js`, ek `api.routes.js` jo sirf prefixes aur parsers jaanta ho; parsers sirf API router mein, explicit limit ke saath.
+10. Mount order fix rakho: `health -> static -> /api/v1 -> 404 -> error handler`. Literal routes parameterised se pehle; `route().all(methodNotAllowed)` se 405.
+11. Express 5 gotchas: inline regex path params nahi; query parser "simple"; `req.body` unparsed content type par undefined.
+12. Test ke baad ek mutation check karo (ordering ya guard hata ke dekho test fail hota hai ya nahi); phir real server par curl smoke.
 
 ## 11. Known limitations / tradeoffs
 
 - Graceful shutdown abhi minimal hai (server close + readiness 503). Request draining with deadline aur ordered dependency close Phase 19 mein.
 - `/health/ready` abhi koi real dependency check nahi karta (koi dependency hai hi nahi); DB check Phase 6 mein.
-- Koi 404 handler / central error handler abhi nahi (Phase 2 aur 4). Unknown routes par Express ka default response aata hai.
+- 404 aur 4xx handling (`notFound`, `clientErrorHandler`) interim hai: sirf 4xx map hote hain, unexpected 5xx par Express ka default handler chalta hai. Central error hierarchy Phase 4 mein.
+- `/api/v1/examples` abhi inline Zod use karta hai; shared validation + response convention Phase 5 mein. Examples in-memory hain aur production mein mount nahi hote.
+- Query values strings hote hain; typed coercion/validation Phase 5 mein.
 - Logging abhi `console` hai; structured Pino logging Phase 3/19 mein.
 - Jest ESM experimental warning print karta hai.
 - `.env` change hone par `npm run dev` auto-restart nahi karta (`--watch` sirf imported files dekhta hai); manually restart karo.
 
 ## 12. Docs index
 
-| Area                  | Where                                                                                                            |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Working rules         | [CLAUDE.md](CLAUDE.md)                                                                                           |
-| Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md)                                                   |
-| Phase plan            | [docs/architecture/phases.md](docs/architecture/phases.md)                                                       |
-| ADRs                  | [docs/architecture/decisions/](docs/architecture/decisions/README.md)                                            |
-| Module docs           | [docs/modules/](docs/modules/README.md) (abhi: [application-foundation](docs/modules/application-foundation.md)) |
-| Runbooks              | [docs/runbooks/](docs/runbooks/README.md)                                                                        |
-| Security              | [docs/security/](docs/security/README.md)                                                                        |
-| Test strategy         | [docs/testing/](docs/testing/README.md)                                                                          |
-| Concept matrix        | [docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md)                               |
+| Area                  | Where                                                                                                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Working rules         | [CLAUDE.md](CLAUDE.md)                                                                                                                                                 |
+| Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md)                                                                                                         |
+| Phase plan            | [docs/architecture/phases.md](docs/architecture/phases.md)                                                                                                             |
+| ADRs                  | [docs/architecture/decisions/](docs/architecture/decisions/README.md)                                                                                                  |
+| Module docs           | [docs/modules/](docs/modules/README.md) (abhi: [application-foundation](docs/modules/application-foundation.md), [routing-and-http](docs/modules/routing-and-http.md)) |
+| Runbooks              | [docs/runbooks/](docs/runbooks/README.md)                                                                                                                              |
+| Security              | [docs/security/](docs/security/README.md)                                                                                                                              |
+| Test strategy         | [docs/testing/](docs/testing/README.md)                                                                                                                                |
+| Concept matrix        | [docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md)                                                                                     |
