@@ -11,7 +11,7 @@ Single source of truth for what is actually done. Every concept named in the [pl
 5. Documentation links point to the page the owning phase will create; a link is valid only after that phase lands.
 6. Phase 24 audits every row. Phase 25 must not report "all concepts complete" unless every row is `verified`.
 
-**Current state: Phase 2 complete. Sections 1–2 are `verified`; every other concept is `planned`.**
+**Current state: Phase 3 complete. Sections 1–3 are `verified`; every other concept is `planned`.**
 
 Note: the `/health/ready` row is verified against fake dependency checks; the database-backed check is tracked under Persistence (Phase 6).
 
@@ -50,20 +50,20 @@ Note: the `/health/ready` row is verified against fake dependency checks; the da
 
 | Concept | Implementation / demo | Test / verification | Documentation | Status |
 | --- | --- | --- | --- | --- |
-| Documented middleware order | — | — | [middleware.md](../modules/middleware.md) | planned |
-| Request ID / correlation ID | — | — | [middleware.md](../modules/middleware.md) | planned |
-| Structured request logging | — | — | [middleware.md](../modules/middleware.md) | planned |
-| Security headers in pipeline | — | — | [middleware.md](../modules/middleware.md) | planned |
-| Application-level middleware | — | — | [middleware.md](../modules/middleware.md) | planned |
-| Router-level middleware | — | — | [middleware.md](../modules/middleware.md) | planned |
-| Route-level middleware | — | — | [middleware.md](../modules/middleware.md) | planned |
-| Middleware chaining and `next()` | — | — | [middleware.md](../modules/middleware.md) | planned |
-| `next(err)` | — | — | [middleware.md](../modules/middleware.md) | planned |
-| Conditional middleware | — | — | [middleware.md](../modules/middleware.md) | planned |
-| Short-circuiting by sending a response | — | — | [middleware.md](../modules/middleware.md) | planned |
-| `res.locals` | — | — | [middleware.md](../modules/middleware.md) | planned |
-| `req.app` | — | — | [middleware.md](../modules/middleware.md) | planned |
-| Sensitive-data exclusion from logs | — | — | [middleware.md](../modules/middleware.md) | planned |
+| Documented middleware order | `src/app.js`, `docs/modules/middleware.md` | `tests/integration/middleware.test.js` (ID/logger/headers precede parsing; mutation-checked) | [middleware.md](../modules/middleware.md) | verified |
+| Request ID / correlation ID | `src/middleware/request-id.js` | `tests/integration/middleware.test.js` (generate, reuse, reject unsafe, concurrent uniqueness) | [middleware.md](../modules/middleware.md) | verified |
+| Structured request logging | `src/middleware/request-logger.js`, `src/logging/logger.js` | `tests/integration/middleware.test.js`, `tests/unit/middleware-units.test.js` | [middleware.md](../modules/middleware.md) | verified |
+| Security headers in pipeline | `src/middleware/security-headers.js` | `tests/integration/middleware.test.js` (200, 404, static, health, parse error) | [middleware.md](../modules/middleware.md) | verified |
+| Application-level middleware | `src/app.js` (`app.use`) | `tests/integration/middleware.test.js` | [middleware.md](../modules/middleware.md) | verified |
+| Router-level middleware | `src/routes/api.routes.js`, `src/examples/middleware-examples.routes.js` (`router.use`) | `tests/integration/middleware.test.js` | [middleware.md](../modules/middleware.md) | verified |
+| Route-level middleware | `src/http/route-guards.js`, examples `/chain`, `/guarded` | `tests/integration/middleware.test.js`, `tests/integration/routing.test.js` | [middleware.md](../modules/middleware.md) | verified |
+| Middleware chaining and `next()` | `src/examples/middleware-examples.routes.js` `/chain` | `tests/integration/middleware.test.js` | [middleware.md](../modules/middleware.md) | verified |
+| `next(err)` | `src/examples/middleware-examples.routes.js` `/fail` | `tests/integration/middleware.test.js` (later middleware/handler not run) | [middleware.md](../modules/middleware.md) | verified |
+| Conditional middleware | `src/middleware/conditional.js`; logger skipped for `/health`; `/conditional` | `tests/integration/middleware.test.js`, `tests/unit/middleware-units.test.js` | [middleware.md](../modules/middleware.md) | verified |
+| Short-circuiting by sending a response | `/guarded` (`requireDemoRole`) | `tests/integration/middleware.test.js` (rejected request never reaches controller; mutation-checked) | [middleware.md](../modules/middleware.md) | verified |
+| `res.locals` | `src/middleware/request-id.js`, `request-logger.js`, `/chain` | `tests/integration/middleware.test.js` (parallel isolation) | [middleware.md](../modules/middleware.md) | verified |
+| `req.app` | `/app-config` | `tests/integration/middleware.test.js` | [middleware.md](../modules/middleware.md) | verified |
+| Sensitive-data exclusion from logs | `src/middleware/request-logger.js`, `src/logging/logger.js` (`REDACT_PATHS`) | `tests/integration/middleware.test.js`, `tests/unit/middleware-units.test.js` | [middleware.md](../modules/middleware.md) | verified |
 
 ## 4. Error handling (Phase 4)
 

@@ -6,6 +6,8 @@ URL space, router organisation, request parsing and the HTTP conventions (method
 
 ## Mount order (`src/app.js`)
 
+Phase 3 added request ID, request logger and security headers before everything below; see [middleware.md](middleware.md) for the full order.
+
 ```
 /health  ->  /static  ->  /api/v1 [ json -> urlencoded -> modules -> examples ]  ->  404  ->  client-error handler
 ```

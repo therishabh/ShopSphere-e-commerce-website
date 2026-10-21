@@ -2,11 +2,22 @@ import { loadConfig, ConfigError } from '../../src/config/env.js';
 
 describe('loadConfig', () => {
   test('applies defaults for an empty environment', () => {
-    expect(loadConfig({})).toEqual({ env: 'development', host: '127.0.0.1', port: 3000 });
+    expect(loadConfig({})).toEqual({
+      env: 'development',
+      host: '127.0.0.1',
+      port: 3000,
+      logLevel: 'info',
+    });
   });
 
   test('coerces PORT from a string', () => {
     expect(loadConfig({ PORT: '8080' }).port).toBe(8080);
+  });
+
+  test('log level defaults by environment and can be overridden', () => {
+    expect(loadConfig({ NODE_ENV: 'test' }).logLevel).toBe('silent');
+    expect(loadConfig({ NODE_ENV: 'production' }).logLevel).toBe('info');
+    expect(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'debug' }).logLevel).toBe('debug');
   });
 
   test('returns a frozen object', () => {
@@ -19,6 +30,7 @@ describe('loadConfig', () => {
     [{ PORT: '70000' }, 'PORT'],
     [{ PORT: '1.5' }, 'PORT'],
     [{ HOST: '' }, 'HOST'],
+    [{ LOG_LEVEL: 'verbose' }, 'LOG_LEVEL'],
   ])('rejects invalid input %j', (env, field) => {
     expect(() => loadConfig(env)).toThrow(ConfigError);
     try {

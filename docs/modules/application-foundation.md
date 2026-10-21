@@ -25,7 +25,7 @@ Why: tests build the app in-process with injected config and fake dependencies, 
 
 - Config is parsed once into a frozen object and passed in; nothing else reads `process.env`.
 - `loadConfig(env)` takes its source as an argument, so tests pass plain objects.
-- Variables: `NODE_ENV` (`development|test|production`, default `development`), `HOST` (default `127.0.0.1`), `PORT` (default `3000`, `0` = ephemeral).
+- Variables: `NODE_ENV` (`development|test|production`, default `development`), `HOST` (default `127.0.0.1`), `PORT` (default `3000`, `0` = ephemeral), `LOG_LEVEL` (`trace|debug|info|warn|error|fatal|silent`; default `info`, `silent` when `NODE_ENV=test`).
 - `dotenv` is called only in `main()` of `src/server.js` (`dotenv.config({ quiet: true })`), never at import time, so tests and `createApp` are unaffected by a local `.env`. It does not override variables already set, so real environment variables win in production. Only `.env.example` is committed.
 - New variables are added to the Zod schema in `src/config/env.js` and `.env.example` together.
 

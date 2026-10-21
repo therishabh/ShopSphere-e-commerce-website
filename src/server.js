@@ -3,13 +3,17 @@ import dotenv from 'dotenv';
 import { loadConfig, ConfigError } from './config/env.js';
 import { createApp } from './app.js';
 import { createReadiness } from './health/readiness.js';
+import { createLogger } from './logging/logger.js';
 
 /**
  * Wire dependencies, listen, and resolve once the port is bound.
  * Rejects if the port cannot be bound. Returns a handle for orderly shutdown.
  */
-export async function startServer(config, { readiness = createReadiness() } = {}) {
-  const app = createApp({ config, readiness });
+export async function startServer(
+  config,
+  { readiness = createReadiness(), logger = createLogger({ level: config.logLevel }) } = {},
+) {
+  const app = createApp({ config, readiness, logger });
 
   const server = await new Promise((resolve, reject) => {
     const s = app.listen(config.port, config.host);
@@ -25,7 +29,7 @@ export async function startServer(config, { readiness = createReadiness() } = {}
     });
   }
 
-  return { server, close, port: server.address().port };
+  return { server, close, port: server.address().port, logger };
 }
 
 async function main() {
@@ -43,8 +47,8 @@ async function main() {
     throw err;
   }
 
-  const { port, close } = await startServer(config);
-  console.log(`ShopSphere listening on http://${config.host}:${port} (${config.env})`);
+  const { port, close, logger } = await startServer(config);
+  logger.info({ host: config.host, port, env: config.env }, 'server listening');
 
   // Minimal stop-on-signal. Full drain/ordered shutdown is a later phase (observability & reliability).
   for (const signal of ['SIGTERM', 'SIGINT']) {
@@ -52,7 +56,7 @@ async function main() {
       close().then(
         () => process.exit(0),
         (err) => {
-          console.error('Error during shutdown:', err);
+          logger.error({ err }, 'error during shutdown');
           process.exit(1);
         },
       );

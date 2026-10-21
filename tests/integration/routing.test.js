@@ -5,7 +5,8 @@ import { loadConfig } from '../../src/config/env.js';
 const NOT_FOUND = { error: { code: 'NOT_FOUND', message: 'Resource not found' } };
 const EX = '/api/v1/examples';
 
-const makeApp = (env = 'test') => createApp({ config: loadConfig({ NODE_ENV: env }) });
+const makeApp = (env = 'test') =>
+  createApp({ config: loadConfig({ NODE_ENV: env, LOG_LEVEL: 'silent' }) });
 
 describe('404 and unknown routes', () => {
   const app = makeApp();

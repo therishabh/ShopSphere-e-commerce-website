@@ -7,6 +7,7 @@ import { createCartRouter } from '../modules/cart/cart.routes.js';
 import { createOrdersRouter } from '../modules/orders/orders.routes.js';
 import { createAdminRouter } from '../modules/admin/admin.routes.js';
 import { createHttpExamplesRouter } from '../examples/http-examples.routes.js';
+import { createMiddlewareExamplesRouter } from '../examples/middleware-examples.routes.js';
 
 export const BODY_LIMIT = '100kb';
 
@@ -32,6 +33,7 @@ export function createApiRouter({ config }) {
   api.use('/admin', createAdminRouter());
 
   if (config.env !== 'production') {
+    api.use('/examples/middleware', createMiddlewareExamplesRouter());
     api.use('/examples', createHttpExamplesRouter());
   }
 
