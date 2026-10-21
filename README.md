@@ -2,29 +2,56 @@
 
 Multi-vendor e-commerce backend (customers, sellers, admins). Express 5 + ESM JavaScript, PostgreSQL + Prisma, Redis, BullMQ, Socket.IO.
 
-> Ye README poora project guide hai. Har phase ke baad update hoti hai: kya banaya, kis sequence mein, kyun, aur kaunse commands/snippets use hue. Sirf ise padh ke poora project samajh aa jana chahiye, aur isi ko recipe ki tarah follow karke doosra project bhi banaya ja sake.
+> Ye README poora project guide hai: kya banaya, kis sequence mein, kyun, aur code kaise kaam karta hai. Har phase ke baad update hoti hai. Naye developer ya fresher ko sirf ise padh ke project aur uska code samajh aa jana chahiye, aur isi ko recipe ki tarah follow karke doosra project bhi banaya ja sake.
 
 **Current status: Phase 2 complete** (foundation + `/api/v1` routing, parsing, status codes, static, safe 404). Business endpoints (auth, products, orders) abhi nahi bane; module routers khaali hain.
+
+---
+
+## Is README ko kaise padhein
+
+Poori file ek saath padhna zaruri nahi. Apne goal ke hisaab se path chuno:
+
+| Goal                                                        | Is order mein padho                                                                                                                                                                                                               |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Project ka idea chahiye** (5 min)                         | [1. Overview](#1-project-ka-overview) → [11. Roadmap](#11-roadmap-phase-025) → [12. Matrix status](#12-concept-coverage-matrix-ka-status)                                                                                         |
+| **Project run karna hai** (5 min)                           | [2. Quick start](#2-quick-start) → [9. Run kaise karein](#9-run-kaise-karein-setup-scripts) → [15. FAQ](#15-faq--troubleshooting)                                                                                                 |
+| **Code samajhna hai** (new dev / fresher)                   | [6. Key concepts](#6-key-concepts-glossary) → [5. Code reading order](#5-code-kaise-padhein-reading-order-aur-request-walkthrough) → [8. Project structure](#8-current-project-structure) → code kholo aur tests saath mein padho |
+| **Pura build sequence samajhna / dusra project banana hai** | [7. Build Log](#7-build-log-phase-by-phase) ko Phase 0 se step-by-step follow karo → [13. Recipe](#13-is-project-ko-recipe-ki-tarah-reuse-karna)                                                                                  |
+| **Naya phase / feature add karna hai**                      | [4. Working rules](#4-working-rules-claudemd-aur-workflow) → [14. Limitations](#14-known-limitations--tradeoffs) → `docs/modules/routing-and-http.md` ka "How to add a new route"                                                 |
+
+**Is README ke conventions**
+
+- **Phase N** = ek complete, tested implementation unit. Har phase ka ek Build Log section hai; phases order mein hain aur aage nahi jaate.
+- **Step N** = us phase ke andar kaam ka exact sequence. Steps order mein follow karoge to same result milega.
+- **Result** line = phase ke end ka verified outcome (tests/lint kya the).
+- **Status words** (matrix mein): `planned → in progress → implemented → tested → documented → verified`. `verified` ka matlab: code + test + doc + checks actually run hue.
+- **Interim** = abhi ke liye theek hai, baad ke phase mein replace hoga (README mein hamesha batate hain kab).
+- Code snippets README mein real code se liye gaye hain. Shaq ho to `src/` ki file hi final truth hai.
 
 ---
 
 ## Table of Contents
 
 1. [Project ka overview](#1-project-ka-overview)
-2. [Tech stack aur fixed decisions](#2-tech-stack-aur-fixed-decisions)
-3. [Working rules (CLAUDE.md) aur workflow](#3-working-rules-claudemd-aur-workflow)
-4. [Build Log (phase by phase)](#4-build-log-phase-by-phase)
+2. [Quick start](#2-quick-start)
+3. [Tech stack aur fixed decisions](#3-tech-stack-aur-fixed-decisions)
+4. [Working rules (CLAUDE.md) aur workflow](#4-working-rules-claudemd-aur-workflow)
+5. [Code kaise padhein: reading order aur request walkthrough](#5-code-kaise-padhein-reading-order-aur-request-walkthrough)
+6. [Key concepts (glossary)](#6-key-concepts-glossary)
+7. [Build Log (phase by phase)](#7-build-log-phase-by-phase)
    - [Phase 0 — Guardrails aur docs skeleton](#phase-0--guardrails-aur-docs-skeleton)
    - [Phase 1 — Application foundation](#phase-1--application-foundation)
    - [Phase 2 — HTTP fundamentals aur routing](#phase-2--http-fundamentals-aur-routing)
-5. [Current project structure](#5-current-project-structure)
-6. [Run kaise karein (setup, scripts)](#6-run-kaise-karein-setup-scripts)
-7. [Verification results (ab tak)](#7-verification-results-ab-tak)
-8. [Roadmap (Phase 0–25)](#8-roadmap-phase-025)
-9. [Concept coverage matrix ka status](#9-concept-coverage-matrix-ka-status)
-10. [Is project ko recipe ki tarah reuse karna](#10-is-project-ko-recipe-ki-tarah-reuse-karna)
-11. [Known limitations / tradeoffs](#11-known-limitations--tradeoffs)
-12. [Docs index](#12-docs-index)
+8. [Current project structure](#8-current-project-structure)
+9. [Run kaise karein (setup, scripts)](#9-run-kaise-karein-setup-scripts)
+10. [Verification results (ab tak)](#10-verification-results-ab-tak)
+11. [Roadmap (Phase 0–25)](#11-roadmap-phase-025)
+12. [Concept coverage matrix ka status](#12-concept-coverage-matrix-ka-status)
+13. [Is project ko recipe ki tarah reuse karna](#13-is-project-ko-recipe-ki-tarah-reuse-karna)
+14. [Known limitations / tradeoffs](#14-known-limitations--tradeoffs)
+15. [FAQ / troubleshooting](#15-faq--troubleshooting)
+16. [Docs index](#16-docs-index)
 
 ---
 
@@ -44,9 +71,35 @@ clients ──> Nginx ──> API process (Express 5) ──> PostgreSQL (Prisma
 
 Module ka layering rule (jab modules aayenge): `route → validation (Zod) → controller (sirf HTTP) → service (business rules, transactions) → repository (Prisma)`. Controller mein business logic nahi.
 
-Is repo ka secondary goal: har Express concept (middleware, error handling, `next('route')`, `res.headersSent`, trust proxy, streams, etc.) code + test + doc ke saath demonstrate karna. Isliye ek coverage matrix maintain hota hai (section 9).
+Is repo ka secondary goal: har Express concept (middleware, error handling, `next('route')`, `res.headersSent`, trust proxy, streams, etc.) code + test + doc ke saath demonstrate karna. Isliye ek coverage matrix maintain hota hai (section 12).
 
-## 2. Tech stack aur fixed decisions
+## 2. Quick start
+
+Prerequisite: Node.js >= 24 aur npm. PostgreSQL/Redis abhi zaruri nahi.
+
+```bash
+git clone https://github.com/therishabh/ShopSphere-e-commerce-website.git
+cd ShopSphere-e-commerce-website
+npm ci                      # lockfile se exact versions
+cp .env.example .env        # optional; defaults kaam karte hain
+npm run dev                 # server http://127.0.0.1:3000
+```
+
+Check karo ki chal raha hai:
+
+```bash
+curl localhost:3000/health/ready
+# {"status":"ready","checks":{}}
+
+curl -X POST localhost:3000/api/v1/examples/notes -H 'content-type: application/json' -d '{"text":"hello"}'
+# {"id":1,"text":"hello"}   (201, Location header ke saath)
+
+npm test                    # 81 tests, ~1-2 sec
+```
+
+Aage ka detail section 9 mein hai.
+
+## 3. Tech stack aur fixed decisions
 
 | Area        | Choice                                     | Reason / note                                                                                              |
 | ----------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -64,7 +117,7 @@ Is repo ka secondary goal: har Express concept (middleware, error handling, `nex
 
 Saari dependencies `--save-exact` se pinned hain aur `package-lock.json` committed hai.
 
-## 3. Working rules (CLAUDE.md) aur workflow
+## 4. Working rules (CLAUDE.md) aur workflow
 
 `CLAUDE.md` root mein hai aur har phase ke liye persistent instructions deta hai. Core rules:
 
@@ -79,7 +132,98 @@ Saari dependencies `--save-exact` se pinned hain aur `package-lock.json` committ
 
 Phase workflow: prompt do → implement → diff + checks review → fail ho to fix → commit → agla phase.
 
-## 4. Build Log (phase by phase)
+## 5. Code kaise padhein: reading order aur request walkthrough
+
+### 5.1 Reading order (Phase 2 tak ka code)
+
+Is order mein files kholo; har step pichle step par build hota hai. Har source file ke saath uska test bhi padho.
+
+| #   | File                                          | Kya samajh aayega                                                                             |
+| --- | --------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 1   | `package.json`                                | ESM (`"type": "module"`), scripts, pinned deps                                                |
+| 2   | `src/config/env.js`                           | Environment variables ek jagah validate hote hain (Zod); baaki code `process.env` nahi chhuta |
+| 3   | `src/server.js`                               | Process ka entrypoint: `dotenv` -> config -> listen -> signals. App yahan nahi banta          |
+| 4   | `src/app.js`                                  | `createApp()` factory: **mount order** yahin dikhta hai                                       |
+| 5   | `src/health/readiness.js`, `health.routes.js` | Liveness vs readiness; named dependency checks                                                |
+| 6   | `src/routes/api.routes.js`                    | `/api/v1` prefix, body parsers, module mounts                                                 |
+| 7   | `src/modules/auth/auth.routes.js` (koi bhi)   | Khaali-par-mounted module; baaki 6 bilkul same                                                |
+| 8   | `src/http/route-guards.js`                    | Reusable route-specific middleware (415, 400, 405)                                            |
+| 9   | `src/http/not-found.js`, `client-errors.js`   | 404 aur 4xx ka safe JSON response                                                             |
+| 10  | `src/examples/http-examples.routes.js`        | Har HTTP concept ka working demo; comments mein concept naam likha hai                        |
+| 11  | `tests/**`                                    | Behaviour ka spec; examples/tests se hi seekhna sabse tez hai                                 |
+
+### 5.2 Ek request ka poora safar
+
+Example: `POST /api/v1/examples/notes` body `{"text":"hello"}`, header `Content-Type: application/json`.
+
+```
+Client
+  │
+  ▼
+Node HTTP server            src/server.js        app.listen(port, host)
+  │
+  ▼
+Express app                 src/app.js           createApp()
+  ├─ app.use('/health', ...)       prefix match nahi  -> skip
+  ├─ app.use('/static', ...)       prefix match nahi  -> skip
+  └─ app.use('/api/v1', ...)       match ✔
+        │                          src/routes/api.routes.js
+        ├─ express.json({limit:'100kb'})   body parse -> req.body = { text: 'hello' }
+        ├─ express.urlencoded(...)         content-type match nahi -> skip
+        ├─ '/auth' ... '/admin'            prefix match nahi -> skip
+        └─ '/examples'                     match ✔ (sirf non-production mein mounted)
+              │                            src/examples/http-examples.routes.js
+              └─ router.route('/notes').post(requireJson, handler)
+                    ├─ requireJson            content-type JSON? haan -> next()
+                    ├─ noteBody.safeParse()   Zod: strict object, text 1..200 chars
+                    └─ res.status(201).location('/api/v1/examples/notes/1').json(note)
+```
+
+Failure paths (har ek ka test hai):
+
+| Kya galat hua                              | Kahan pakda gaya                                             | Response                                    |
+| ------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------- |
+| JSON toot-ta hai (`{"a": `)                | `express.json` error throw karta hai -> `clientErrorHandler` | `400 BAD_REQUEST`, "Malformed request body" |
+| Body 100kb se bada                         | `express.json`                                               | `413 PAYLOAD_TOO_LARGE`                     |
+| Content-Type JSON nahi                     | `requireJson` route middleware, handler tak nahi pahunchta   | `415`                                       |
+| `text` missing / bahut lamba / extra field | handler mein Zod check                                       | `400 VALIDATION_ERROR` + `details`          |
+| Koi route match nahi hua                   | sab ke baad `notFound`                                       | `404 NOT_FOUND`                             |
+| Method galat (`DELETE /notes`)             | `route().all(methodNotAllowed)`                              | `405` + `Allow` header                      |
+| Malformed URL (`%E0%A4%A`)                 | Express params decode fail -> `clientErrorHandler`           | `400`                                       |
+
+Key idea: Express request ko **order mein registered middleware/routers** se guzaarta hai; jo pehle match hota hai wo handle karta hai ya `next()` se aage bhejta hai. Isiliye `app.js` aur `api.routes.js` ka order deliberate hai (reason Build Log Phase 2 Step 2–3 mein).
+
+## 6. Key concepts (glossary)
+
+Sirf wo concepts jo ab tak code mein use hue hain. Naye phases ke concepts us phase ke saath add honge.
+
+| Concept                             | Matlab aur is project mein kahan                                                                                                                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ESM**                             | `import/export` module system (`"type": "module"`). File extensions import mein likhne padte hain (`./app.js`).                                                                                         |
+| **App factory**                     | `createApp({ config, readiness })` ek function hai jo app _banata_ hai, global state nahi rakhta. Isse tests har baar fresh app bana sakte hain aur port ki zarurat nahi. (`src/app.js`)                |
+| **app.js vs server.js**             | `app.js` = Express app ki wiring (testable). `server.js` = process-level kaam: port, env, signals, exit codes.                                                                                          |
+| **Dependency injection (halka)**    | Config aur readiness ko function argument ki tarah pass karte hain, import se nahi. Tests fakes inject kar sakte hain.                                                                                  |
+| **Fail-fast config**                | Galat env var par server start hi nahi hota; saari errors ek saath print hoti hain (`ConfigError`, exit 1).                                                                                             |
+| **Liveness vs readiness**           | `/health/live` = process zinda hai (dependency check nahi, restart decide karne ke liye). `/health/ready` = traffic lene layak hai (dependencies up, shutdown nahi). DB down ho to ready 503, live 200. |
+| **Readiness check**                 | Named async function; reject ya timeout = `down`. Phase 6 mein `db` check judega.                                                                                                                       |
+| **Middleware**                      | `(req, res, next)` function. Response bhejke pipeline rok sakta hai, ya `next()` se aage bhejta hai.                                                                                                    |
+| **Router / mount**                  | `Router()` mini-app hai; `app.use('/prefix', router)` use ek URL prefix par lagata hai.                                                                                                                 |
+| **Mount order**                     | Express registration order mein match karta hai. Literal route (`/notes/latest`) ko parameter route (`/notes/:id`) se pehle rakhna padta hai.                                                           |
+| **Route-specific middleware**       | Sirf ek route par lagne wala guard, e.g. `post(requireJson, handler)`.                                                                                                                                  |
+| **`route().all()` fallback**        | Same path ke methods group karke aakhir mein `.all(...)` lagao: koi method match na ho to 405 + `Allow`.                                                                                                |
+| **Body parser limit**               | `express.json({limit:'100kb'})`: bada body 413 se reject. Parser sirf `/api/v1` par lagta hai.                                                                                                          |
+| **Simple query parser (Express 5)** | `?x=1&x=2` -> `['1','2']`; `a[b]=1` nested object nahi banta. Values hamesha string.                                                                                                                    |
+| **Status codes**                    | 201 + `Location` (create), 204 (delete, empty body), 400 (invalid input), 404, 405, 413, 415. Table: `docs/modules/routing-and-http.md`.                                                                |
+| **Safe error response**             | Fixed `{error:{code,message}}`, raw error text ya stack nahi; 404 requested path echo nahi karta.                                                                                                       |
+| **Interim**                         | Abhi ke liye kaafi, baad ke phase mein replace (e.g. `clientErrorHandler` -> Phase 4).                                                                                                                  |
+| **Modular monolith**                | Ek deployable app, andar alag modules (auth, products, ...). Microservices nahi.                                                                                                                        |
+| **Mock provider**                   | Payment/email ke test-safe fake adapters; real credentials kabhi nahi.                                                                                                                                  |
+| **Exact pinning**                   | `--save-exact` + committed `package-lock.json`: har machine par same versions.                                                                                                                          |
+| **Supertest**                       | Bina port khole app par HTTP requests chalane ka tool (`request(app).get(...)`).                                                                                                                        |
+| **Mutation check**                  | Code jaan-boojh ke todke dekhna ki test fail hota hai ya nahi; pass-karne-wale-lekin-bekar tests pakadne ke liye.                                                                                       |
+| **Status ladder**                   | Matrix mein `planned → ... → verified`; evidence ke bina aage nahi badhta.                                                                                                                              |
+
+## 7. Build Log (phase by phase)
 
 ### Phase 0 — Guardrails aur docs skeleton
 
@@ -402,7 +546,7 @@ Body validation ke liye abhi inline Zod (`z.strictObject({ text: z.string().trim
 
 Result: 81/81 tests pass, lint aur format clean.
 
-## 5. Current project structure
+## 8. Current project structure
 
 ```
 .
@@ -435,7 +579,7 @@ Result: 81/81 tests pass, lint aur format clean.
 
 Planned: `src/worker.js`, `prisma/`, `labs/`, `deploy/`. Layout Phase 2+ mein evolve ho sakta hai.
 
-## 6. Run kaise karein (setup, scripts)
+## 9. Run kaise karein (setup, scripts)
 
 Prerequisites: Node.js >= 24, npm. PostgreSQL/Redis abhi zaruri nahi.
 
@@ -466,7 +610,7 @@ Endpoints abhi:
 | `/api/v1/examples/*`                                        | Teaching endpoints (non-production only): `ping`, `echo/:value`, `echo/json`, `echo/form`, `old-notes`, `notes`, `notes/:id`, `notes/:noteId/comments` |
 | anything else                                               | `404 {"error":{"code":"NOT_FOUND","message":"Resource not found"}}`                                                                                    |
 
-## 7. Verification results (ab tak)
+## 10. Verification results (ab tak)
 
 Phase 2 ke end par actual run hue commands (Phase 1 ke checks bhi included):
 
@@ -484,7 +628,7 @@ Phase 2 extras: ordering test ka mutation check (order badalne par 1 test fail, 
 
 Environment-dependent checks (Postgres, Redis, Docker) abhi applicable nahi.
 
-## 8. Roadmap (Phase 0–25)
+## 11. Roadmap (Phase 0–25)
 
 | #   | Phase                                                       | Status  |
 | --- | ----------------------------------------------------------- | ------- |
@@ -517,11 +661,11 @@ Environment-dependent checks (Postgres, Redis, Docker) abhi applicable nahi.
 
 Detail: [docs/architecture/phases.md](docs/architecture/phases.md).
 
-## 9. Concept coverage matrix ka status
+## 12. Concept coverage matrix ka status
 
 [docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md): 235 concepts. Abhi sections 1 (Foundation, 7) aur 2 (HTTP & routing, 14) `verified` (21 concepts); baaki sab `planned`. Har phase ke baad sirf evidence-backed rows update hote hain.
 
-## 10. Is project ko recipe ki tarah reuse karna
+## 13. Is project ko recipe ki tarah reuse karna
 
 Naye Express 5 project ke liye Phase 0 + 1 + 2 ka reusable sequence:
 
@@ -538,7 +682,7 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 ka reusable sequence:
 11. Express 5 gotchas: inline regex path params nahi; query parser "simple"; `req.body` unparsed content type par undefined.
 12. Test ke baad ek mutation check karo (ordering ya guard hata ke dekho test fail hota hai ya nahi); phir real server par curl smoke.
 
-## 11. Known limitations / tradeoffs
+## 14. Known limitations / tradeoffs
 
 - Graceful shutdown abhi minimal hai (server close + readiness 503). Request draining with deadline aur ordered dependency close Phase 19 mein.
 - `/health/ready` abhi koi real dependency check nahi karta (koi dependency hai hi nahi); DB check Phase 6 mein.
@@ -549,7 +693,24 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 ka reusable sequence:
 - Jest ESM experimental warning print karta hai.
 - `.env` change hone par `npm run dev` auto-restart nahi karta (`--watch` sirf imported files dekhta hai); manually restart karo.
 
-## 12. Docs index
+## 15. FAQ / troubleshooting
+
+| Problem                                                     | Wajah / fix                                                                                                                                                                                          |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server start nahi hota, `Invalid environment configuration` | Env var galat hai (e.g. `PORT=abc`, `NODE_ENV=staging`). Message mein saari invalid fields listed hain. `.env` ya shell env theek karo.                                                              |
+| `EADDRINUSE`                                                | Port pehle se use mein hai. `PORT` badlo ya purana process band karo (`lsof -i :3000`).                                                                                                              |
+| `.env` badalne par kuch nahi badla                          | `npm run dev` `.env` change par restart nahi karta; manually restart karo. Aur shell mein pehle se set env var `.env` ko override kar deta hai (dotenv override nahi karta).                         |
+| `npm test` par `ExperimentalWarning: VM Modules`            | Normal hai: Jest native ESM `--experimental-vm-modules` se chalta hai.                                                                                                                               |
+| Test mein `jest is not defined`                             | ESM mein `jest` global nahi; `import { jest } from '@jest/globals'` karo.                                                                                                                            |
+| `GET /api/v1/auth/login` 404 kyun deta hai?                 | Module abhi khaali hai (Phase 7 mein bhara jayega). Fake endpoint nahi banate.                                                                                                                       |
+| `/api/v1/examples/*` production mein 404 kyun?              | Teaching endpoints sirf `NODE_ENV !== 'production'` mein mount hote hain.                                                                                                                            |
+| `/notes/abc` par 400 kyun?                                  | `requireNumericParam('id')` route middleware positive integer maangta hai. Express 5 mein inline regex (`:id(\\d+)`) support nahi.                                                                   |
+| Naya env var kaise add karun?                               | `src/config/env.js` ke Zod schema mein + `.env.example` mein dono jagah; config object se hi padho, `process.env` seedha nahi.                                                                       |
+| Naya route kaise add karun?                                 | `docs/modules/routing-and-http.md` -> "How to add a new route".                                                                                                                                      |
+| Naya phase khatam hone par kya update karun?                | Tests + `docs/modules/<module>.md` + matrix rows (evidence ke saath) + **README**: status, TOC, Build Log (naya phase), structure, run/endpoints, verification, roadmap, glossary, FAQ, limitations. |
+| `npm audit` moderate dikhata hai                            | Sirf Jest ke dev-time dependency chain mein; `npm audit --omit=dev` = 0. Suggested `--force` fix Jest ko downgrade karta hai, isliye nahi lagaya.                                                    |
+
+## 16. Docs index
 
 | Area                  | Where                                                                                                                                                                  |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

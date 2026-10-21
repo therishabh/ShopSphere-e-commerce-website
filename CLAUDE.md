@@ -38,8 +38,9 @@ ShopSphere is a production-style multi-vendor e-commerce backend (customers, sel
 
 - After **every** implementation phase, update `README.md` before finishing, plus focused docs under `docs/` and the concept matrix.
 - **README is the complete, self-contained project guide** (this replaces any earlier "keep README short" rule). The owner should be able to read only the README and understand the whole project, and reuse it as a recipe to build another project.
-  - Language: **Hinglish** (Hindi in Roman script mixed with English technical terms). Audience is an experienced developer: no beginner hand-holding, no trivial details, but no important concept may be missing.
-  - Top of the file: a **Table of Contents** covering the whole project. Keep it current when sections are added.
+  - Language: **Hinglish** (Hindi in Roman script mixed with English technical terms). Audience: owner **plus any new developer or fresher** who must be able to understand the whole project and its code from the README. Explain each concept the project uses in a line or two (key concepts section), but skip trivia (what npm is, how to install Node) and don't be childish.
+  - Top of the file: a **"README kaise padhein"** reading guide (paths by goal) and a **Table of Contents** covering the whole project. Keep both current when sections are added.
+  - Keep these sections current every phase: quick start, code reading order, the end-to-end request walkthrough (update it when the pipeline changes), key concepts glossary (add new concepts introduced in the phase), FAQ/troubleshooting (add real errors hit during the phase).
   - Keep a chronological **Build Log**: one section per phase, with the steps in the exact order they were done (kya kiya, kis sequence mein, kyun), the exact commands run, and **code snippets** wherever they clarify the implementation. Append the new phase; do not rewrite history except to fix errors.
   - Also keep current: project structure, how to run, scripts, decisions and their reasons, verification results (actual commands/outcomes only), known limitations, roadmap status.
   - Length is not a concern; completeness and accuracy are. Snippets must match the real code. Never describe something as done if code or tests are missing.
