@@ -29,6 +29,8 @@ export function createRequestLogger(logger) {
         status: res.statusCode,
         durationMs: Number(process.hrtime.bigint() - start) / 1e6,
       };
+      // errorHandler ne agar error classify kiya to uska stable code (e.g. NOT_FOUND) isi ek line mein aata hai.
+      if (res.locals.errorCode) entry.errorCode = res.locals.errorCode;
       if (req.route?.path) entry.route = req.route.path;
       else entry.path = req.originalUrl.split('?')[0].slice(0, MAX_LOGGED_PATH);
 

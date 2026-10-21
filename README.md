@@ -4,7 +4,7 @@ Multi-vendor e-commerce backend (customers, sellers, admins). Express 5 + ESM Ja
 
 > Ye README poora project guide hai: kya banaya, kis sequence mein, kyun, aur code kaise kaam karta hai. Har phase ke baad update hoti hai. Naye developer ya fresher ko sirf ise padh ke project aur uska code samajh aa jana chahiye, aur isi ko recipe ki tarah follow karke doosra project bhi banaya ja sake.
 
-**Current status: Phase 3 complete** (foundation + `/api/v1` routing, plus middleware pipeline: request ID, structured logging, security headers). Business endpoints (auth, products, orders) abhi nahi bane; module routers khaali hain.
+**Current status: Phase 4 complete** (foundation, `/api/v1` routing, middleware pipeline, aur centralized error handling: error hierarchy, safe responses, expected vs unexpected logging). Business endpoints (auth, products, orders) abhi nahi bane; module routers khaali hain.
 
 ---
 
@@ -44,6 +44,7 @@ Poori file ek saath padhna zaruri nahi. Apne goal ke hisaab se path chuno:
    - [Phase 1 — Application foundation](#phase-1--application-foundation)
    - [Phase 2 — HTTP fundamentals aur routing](#phase-2--http-fundamentals-aur-routing)
    - [Phase 3 — Middleware pipeline aur request context](#phase-3--middleware-pipeline-aur-request-context)
+   - [Phase 4 — Centralized error handling](#phase-4--centralized-error-handling)
 8. [Current project structure](#8-current-project-structure)
 9. [Run kaise karein (setup, scripts)](#9-run-kaise-karein-setup-scripts)
 10. [Verification results (ab tak)](#10-verification-results-ab-tak)
@@ -97,7 +98,7 @@ curl -i localhost:3000/api/v1/examples/ping       # X-Request-Id + security head
 curl -X POST localhost:3000/api/v1/examples/notes -H 'content-type: application/json' -d '{"text":"hello"}'
 # {"id":1,"text":"hello"}   (201, Location header ke saath)
 
-npm test                    # 123 tests, ~1-2 sec
+npm test                    # 183 tests, ~1-2 sec
 ```
 
 Aage ka detail section 9 mein hai.
@@ -137,24 +138,24 @@ Phase workflow: prompt do → implement → diff + checks review → fail ho to 
 
 ## 5. Code kaise padhein: reading order aur request walkthrough
 
-### 5.1 Reading order (Phase 3 tak ka code)
+### 5.1 Reading order (Phase 4 tak ka code)
 
 Is order mein files kholo; har step pichle step par build hota hai. Har source file ke saath uska test bhi padho.
 
-| #   | File                                                                    | Kya samajh aayega                                                                             |
-| --- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| 1   | `package.json`                                                          | ESM (`"type": "module"`), scripts, pinned deps                                                |
-| 2   | `src/config/env.js`                                                     | Environment variables ek jagah validate hote hain (Zod); baaki code `process.env` nahi chhuta |
-| 3   | `src/server.js`                                                         | Process ka entrypoint: `dotenv` -> config -> listen -> signals. App yahan nahi banta          |
-| 4   | `src/app.js`                                                            | `createApp()` factory: **mount order** yahin dikhta hai                                       |
-| 5   | `src/health/readiness.js`, `health.routes.js`                           | Liveness vs readiness; named dependency checks                                                |
-| 6   | `src/logging/logger.js`, `src/middleware/*.js`                          | Pino logger + redaction; request ID, request logger, conditional `when/unless`, Helmet        |
-| 7   | `src/routes/api.routes.js`                                              | `/api/v1` prefix, body parsers, module mounts                                                 |
-| 8   | `src/modules/auth/auth.routes.js` (koi bhi)                             | Khaali-par-mounted module; baaki 6 bilkul same                                                |
-| 9   | `src/http/route-guards.js`                                              | Reusable route-specific middleware (415, 400, 405)                                            |
-| 10  | `src/http/not-found.js`, `client-errors.js`                             | 404 aur 4xx ka safe JSON response                                                             |
-| 11  | `src/examples/http-examples.routes.js`, `middleware-examples.routes.js` | HTTP aur middleware concepts ke working demos; comments mein concept naam likha hai           |
-| 12  | `tests/**` (+ `tests/helpers/log-capture.js`)                           | Behaviour ka spec; examples/tests se hi seekhna sabse tez hai                                 |
+| #   | File                                                                                       | Kya samajh aayega                                                                             |
+| --- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| 1   | `package.json`                                                                             | ESM (`"type": "module"`), scripts, pinned deps                                                |
+| 2   | `src/config/env.js`                                                                        | Environment variables ek jagah validate hote hain (Zod); baaki code `process.env` nahi chhuta |
+| 3   | `src/server.js`                                                                            | Process ka entrypoint: `dotenv` -> config -> listen -> signals. App yahan nahi banta          |
+| 4   | `src/app.js`                                                                               | `createApp()` factory: **mount order** yahin dikhta hai                                       |
+| 5   | `src/health/readiness.js`, `health.routes.js`                                              | Liveness vs readiness; named dependency checks                                                |
+| 6   | `src/logging/logger.js`, `src/middleware/*.js`                                             | Pino logger + redaction; request ID, request logger, conditional `when/unless`, Helmet        |
+| 7   | `src/routes/api.routes.js`                                                                 | `/api/v1` prefix, body parsers, module mounts                                                 |
+| 8   | `src/modules/auth/auth.routes.js` (koi bhi)                                                | Khaali-par-mounted module; baaki 6 bilkul same                                                |
+| 9   | `src/http/route-guards.js`                                                                 | Reusable route-specific middleware (415, 400, 405)                                            |
+| 10  | `src/errors/app-errors.js`, `to-app-error.js`, `src/http/error-handler.js`, `not-found.js` | Error hierarchy, thrown value ki classification, aur central safe response + logging          |
+| 11  | `src/examples/http-examples.routes.js`, `middleware-examples.routes.js`                    | HTTP aur middleware concepts ke working demos; comments mein concept naam likha hai           |
+| 12  | `tests/**` (+ `tests/helpers/log-capture.js`)                                              | Behaviour ka spec; examples/tests se hi seekhna sabse tez hai                                 |
 
 ### 5.2 Ek request ka poora safar
 
@@ -192,18 +193,21 @@ Response band hone par requestLogger ek JSON line likhta hai:
 
 Dhyaan do: body, query, headers, cookies ya path-param values us log line mein kabhi nahi aate.
 
+Agar kahin error ho (throw, rejected Promise ya `next(err)`), Express normal middleware skip karke seedha sabse last wale `errorHandler` par aata hai (section 7, Phase 4); wahi ek safe response banata hai.
+
 Failure paths (har ek ka test hai):
 
-| Kya galat hua                                     | Kahan pakda gaya                                             | Response                                    |
-| ------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------- |
-| JSON toot-ta hai (`{"a": `)                       | `express.json` error throw karta hai -> `clientErrorHandler` | `400 BAD_REQUEST`, "Malformed request body" |
-| Body 100kb se bada                                | `express.json`                                               | `413 PAYLOAD_TOO_LARGE`                     |
-| Content-Type JSON nahi                            | `requireJson` route middleware, handler tak nahi pahunchta   | `415`                                       |
-| `text` missing / bahut lamba / extra field        | handler mein Zod check                                       | `400 VALIDATION_ERROR` + `details`          |
-| Koi route match nahi hua                          | sab ke baad `notFound`                                       | `404 NOT_FOUND`                             |
-| Method galat (`DELETE /notes`)                    | `route().all(methodNotAllowed)`                              | `405` + `Allow` header                      |
-| Malformed URL (`%E0%A4%A`)                        | Express params decode fail -> `clientErrorHandler`           | `400`                                       |
-| Guard ne reject kiya (e.g. `/middleware/guarded`) | route-level middleware response bhej deta hai, `next()` nahi | `403`; handler tak request nahi pahunchti   |
+| Kya galat hua                                            | Kahan pakda gaya                                             | Response                                                                       |
+| -------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| JSON toot-ta hai (`{"a": `)                              | `express.json` error throw karta hai -> `errorHandler`       | `400 BAD_REQUEST`, "Malformed request body"                                    |
+| Body 100kb se bada                                       | `express.json`                                               | `413 PAYLOAD_TOO_LARGE`                                                        |
+| Content-Type JSON nahi                                   | `requireJson` route middleware, handler tak nahi pahunchta   | `415`                                                                          |
+| `text` missing / bahut lamba / extra field               | handler mein Zod check                                       | `400 VALIDATION_ERROR` + `details`                                             |
+| Koi route match nahi hua                                 | sab ke baad `notFound`                                       | `404 NOT_FOUND`                                                                |
+| Method galat (`DELETE /notes`)                           | `route().all(methodNotAllowed)`                              | `405` + `Allow` header                                                         |
+| Handler mein bug (`throw new Error`) ya rejected Promise | Express 5 khud pakadta hai -> `errorHandler`                 | `500 INTERNAL_ERROR`, generic message; asli error + stack sirf server log mein |
+| Malformed URL (`%E0%A4%A`)                               | Express params decode fail -> `errorHandler`                 | `400`                                                                          |
+| Guard ne reject kiya (e.g. `/middleware/guarded`)        | route-level middleware response bhej deta hai, `next()` nahi | `403`; handler tak request nahi pahunchti                                      |
 
 Har failure response par bhi `X-Request-Id` aur security headers hote hain, aur request log hoti hai (kyunki ID, logger aur Helmet parsers/routes se pehle hain).
 
@@ -213,41 +217,47 @@ Key idea: Express request ko **order mein registered middleware/routers** se guz
 
 Sirf wo concepts jo ab tak code mein use hue hain. Naye phases ke concepts us phase ke saath add honge.
 
-| Concept                                           | Matlab aur is project mein kahan                                                                                                                                                                                     |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **ESM**                                           | `import/export` module system (`"type": "module"`). File extensions import mein likhne padte hain (`./app.js`).                                                                                                      |
-| **App factory**                                   | `createApp({ config, readiness })` ek function hai jo app _banata_ hai, global state nahi rakhta. Isse tests har baar fresh app bana sakte hain aur port ki zarurat nahi. (`src/app.js`)                             |
-| **app.js vs server.js**                           | `app.js` = Express app ki wiring (testable). `server.js` = process-level kaam: port, env, signals, exit codes.                                                                                                       |
-| **Dependency injection (halka)**                  | Config aur readiness ko function argument ki tarah pass karte hain, import se nahi. Tests fakes inject kar sakte hain.                                                                                               |
-| **Fail-fast config**                              | Galat env var par server start hi nahi hota; saari errors ek saath print hoti hain (`ConfigError`, exit 1).                                                                                                          |
-| **Liveness vs readiness**                         | `/health/live` = process zinda hai (dependency check nahi, restart decide karne ke liye). `/health/ready` = traffic lene layak hai (dependencies up, shutdown nahi). DB down ho to ready 503, live 200.              |
-| **Readiness check**                               | Named async function; reject ya timeout = `down`. Phase 6 mein `db` check judega.                                                                                                                                    |
-| **Middleware**                                    | `(req, res, next)` function. Response bhejke pipeline rok sakta hai, ya `next()` se aage bhejta hai.                                                                                                                 |
-| **Router / mount**                                | `Router()` mini-app hai; `app.use('/prefix', router)` use ek URL prefix par lagata hai.                                                                                                                              |
-| **Mount order**                                   | Express registration order mein match karta hai. Literal route (`/notes/latest`) ko parameter route (`/notes/:id`) se pehle rakhna padta hai.                                                                        |
-| **Route-specific middleware**                     | Sirf ek route par lagne wala guard, e.g. `post(requireJson, handler)`.                                                                                                                                               |
-| **`route().all()` fallback**                      | Same path ke methods group karke aakhir mein `.all(...)` lagao: koi method match na ho to 405 + `Allow`.                                                                                                             |
-| **Body parser limit**                             | `express.json({limit:'100kb'})`: bada body 413 se reject. Parser sirf `/api/v1` par lagta hai.                                                                                                                       |
-| **Simple query parser (Express 5)**               | `?x=1&x=2` -> `['1','2']`; `a[b]=1` nested object nahi banta. Values hamesha string.                                                                                                                                 |
-| **Status codes**                                  | 201 + `Location` (create), 204 (delete, empty body), 400 (invalid input), 404, 405, 413, 415. Table: `docs/modules/routing-and-http.md`.                                                                             |
-| **Safe error response**                           | Fixed `{error:{code,message}}`, raw error text ya stack nahi; 404 requested path echo nahi karta.                                                                                                                    |
-| **Application / router / route-level middleware** | `app.use(...)` poori app par; `router.use(...)` ek router par; `router.get(path, mw, handler)` sirf us route par. Teeno ke examples: `requestId`, body parsers, `requireJson`.                                       |
-| **`next()` / `next(err)`**                        | `next()` = agle matching middleware par; `next(err)` = normal middleware/handler skip karke error middleware (4 args) par. Response bhejke `next()` na call karna = pipeline yahin ruk gayi (`return res...` likho). |
-| **Conditional middleware**                        | `when(pred, mw)` / `unless(pred, mw)`: predicate par middleware chalao ya seedha `next()`. Health probes ka logging aise skip hota hai.                                                                              |
-| **Request ID / correlation ID**                   | Har request ka unique ID (`X-Request-Id`); logs aur response mein same. Valid incoming ID reuse hota hai taaki ek call services ke beech trace ho sake.                                                              |
-| **`res.locals`**                                  | Ek response/request ke liye scratchpad (`requestId`, `log`). Sirf downstream ko chahiye wahi values; entities ya secrets nahi. Requests ke beech share nahi hota.                                                    |
-| **`req.app`**                                     | Handler se owning Express app tak pahunch (`req.app.locals.config`), import ke bina.                                                                                                                                 |
-| **Structured logging (Pino)**                     | Har log JSON object hai (`level`, `requestId`, `status`, ...), machine-searchable. `LOG_LEVEL` se control; tests mein `silent`.                                                                                      |
-| **Redaction**                                     | Pino `redact` paths sensitive keys (`password`, `token`, `authorization`, `cookie`) ko `[Redacted]` kar dete hain. Safety net hai; asli rule: sensitive data log hi mat karo.                                        |
-| **Helmet / security headers**                     | `X-Content-Type-Options`, `Content-Security-Policy`, `X-Frame-Options`... ek middleware se. Har response par (errors par bhi).                                                                                       |
-| **Route pattern vs raw path**                     | Logs mein `/echo/:value` (pattern) jaata hai, `/echo/abc123` nahi, kyunki path params mein tokens ho sakte hain.                                                                                                     |
-| **Interim**                                       | Abhi ke liye kaafi, baad ke phase mein replace (e.g. `clientErrorHandler` -> Phase 4).                                                                                                                               |
-| **Modular monolith**                              | Ek deployable app, andar alag modules (auth, products, ...). Microservices nahi.                                                                                                                                     |
-| **Mock provider**                                 | Payment/email ke test-safe fake adapters; real credentials kabhi nahi.                                                                                                                                               |
-| **Exact pinning**                                 | `--save-exact` + committed `package-lock.json`: har machine par same versions.                                                                                                                                       |
-| **Supertest**                                     | Bina port khole app par HTTP requests chalane ka tool (`request(app).get(...)`).                                                                                                                                     |
-| **Mutation check**                                | Code jaan-boojh ke todke dekhna ki test fail hota hai ya nahi; pass-karne-wale-lekin-bekar tests pakadne ke liye.                                                                                                    |
-| **Status ladder**                                 | Matrix mein `planned → ... → verified`; evidence ke bina aage nahi badhta.                                                                                                                                           |
+| Concept                                           | Matlab aur is project mein kahan                                                                                                                                                                                                 |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ESM**                                           | `import/export` module system (`"type": "module"`). File extensions import mein likhne padte hain (`./app.js`).                                                                                                                  |
+| **App factory**                                   | `createApp({ config, readiness })` ek function hai jo app _banata_ hai, global state nahi rakhta. Isse tests har baar fresh app bana sakte hain aur port ki zarurat nahi. (`src/app.js`)                                         |
+| **app.js vs server.js**                           | `app.js` = Express app ki wiring (testable). `server.js` = process-level kaam: port, env, signals, exit codes.                                                                                                                   |
+| **Dependency injection (halka)**                  | Config aur readiness ko function argument ki tarah pass karte hain, import se nahi. Tests fakes inject kar sakte hain.                                                                                                           |
+| **Fail-fast config**                              | Galat env var par server start hi nahi hota; saari errors ek saath print hoti hain (`ConfigError`, exit 1).                                                                                                                      |
+| **Liveness vs readiness**                         | `/health/live` = process zinda hai (dependency check nahi, restart decide karne ke liye). `/health/ready` = traffic lene layak hai (dependencies up, shutdown nahi). DB down ho to ready 503, live 200.                          |
+| **Readiness check**                               | Named async function; reject ya timeout = `down`. Phase 6 mein `db` check judega.                                                                                                                                                |
+| **Middleware**                                    | `(req, res, next)` function. Response bhejke pipeline rok sakta hai, ya `next()` se aage bhejta hai.                                                                                                                             |
+| **Router / mount**                                | `Router()` mini-app hai; `app.use('/prefix', router)` use ek URL prefix par lagata hai.                                                                                                                                          |
+| **Mount order**                                   | Express registration order mein match karta hai. Literal route (`/notes/latest`) ko parameter route (`/notes/:id`) se pehle rakhna padta hai.                                                                                    |
+| **Route-specific middleware**                     | Sirf ek route par lagne wala guard, e.g. `post(requireJson, handler)`.                                                                                                                                                           |
+| **`route().all()` fallback**                      | Same path ke methods group karke aakhir mein `.all(...)` lagao: koi method match na ho to 405 + `Allow`.                                                                                                                         |
+| **Body parser limit**                             | `express.json({limit:'100kb'})`: bada body 413 se reject. Parser sirf `/api/v1` par lagta hai.                                                                                                                                   |
+| **Simple query parser (Express 5)**               | `?x=1&x=2` -> `['1','2']`; `a[b]=1` nested object nahi banta. Values hamesha string.                                                                                                                                             |
+| **Status codes**                                  | 201 + `Location` (create), 204 (delete, empty body), 400 (invalid input), 404, 405, 413, 415. Table: `docs/modules/routing-and-http.md`.                                                                                         |
+| **Safe error response**                           | Fixed `{error:{code,message}}`, raw error text ya stack nahi; 404 requested path echo nahi karta.                                                                                                                                |
+| **Application / router / route-level middleware** | `app.use(...)` poori app par; `router.use(...)` ek router par; `router.get(path, mw, handler)` sirf us route par. Teeno ke examples: `requestId`, body parsers, `requireJson`.                                                   |
+| **`next()` / `next(err)`**                        | `next()` = agle matching middleware par; `next(err)` = normal middleware/handler skip karke error middleware (4 args) par. Response bhejke `next()` na call karna = pipeline yahin ruk gayi (`return res...` likho).             |
+| **Conditional middleware**                        | `when(pred, mw)` / `unless(pred, mw)`: predicate par middleware chalao ya seedha `next()`. Health probes ka logging aise skip hota hai.                                                                                          |
+| **Request ID / correlation ID**                   | Har request ka unique ID (`X-Request-Id`); logs aur response mein same. Valid incoming ID reuse hota hai taaki ek call services ke beech trace ho sake.                                                                          |
+| **`res.locals`**                                  | Ek response/request ke liye scratchpad (`requestId`, `log`). Sirf downstream ko chahiye wahi values; entities ya secrets nahi. Requests ke beech share nahi hota.                                                                |
+| **`req.app`**                                     | Handler se owning Express app tak pahunch (`req.app.locals.config`), import ke bina.                                                                                                                                             |
+| **Structured logging (Pino)**                     | Har log JSON object hai (`level`, `requestId`, `status`, ...), machine-searchable. `LOG_LEVEL` se control; tests mein `silent`.                                                                                                  |
+| **Redaction**                                     | Pino `redact` paths sensitive keys (`password`, `token`, `authorization`, `cookie`) ko `[Redacted]` kar dete hain. Safety net hai; asli rule: sensitive data log hi mat karo.                                                    |
+| **Helmet / security headers**                     | `X-Content-Type-Options`, `Content-Security-Policy`, `X-Frame-Options`... ek middleware se. Har response par (errors par bhi).                                                                                                   |
+| **Route pattern vs raw path**                     | Logs mein `/echo/:value` (pattern) jaata hai, `/echo/abc123` nahi, kyunki path params mein tokens ho sakte hain.                                                                                                                 |
+| **Operational vs unexpected error**               | Operational = expected (validation, 404, conflict): client ko message milta hai, stack log nahi. Unexpected = bug/infra (DB down): client ko generic 500, server log mein poora error + stack. `isOperational` flag isi ke liye. |
+| **AppError hierarchy**                            | `AppError` ki subclasses (`NotFoundError`, `ConflictError`, ...), har ek ka fixed status aur stable `code`. Service/handler bas `throw new ...Error()` karta hai. (`src/errors/`)                                                |
+| **Error middleware (4 args)**                     | `(err, req, res, next)`: Express ise isi signature se pehchanta hai; sabse last mount hota hai. Ek hi jagah saare errors ka response + logging.                                                                                  |
+| **Express 5 async errors**                        | `async` handler mein throw ya rejected Promise Express 5 khud `next(err)` bana deta hai; try/catch ya `asyncHandler` wrapper ki zarurat nahi (Express 4 mein hoti thi).                                                          |
+| **Safe error response**                           | `{ error: { code, message, details? } }`; kabhi stack, cause, ya raw error text nahi. Handler mein `NODE_ENV` branch nahi, isliye production aur dev same.                                                                       |
+| **`res.headersSent`**                             | Response shuru ho chuka ho to naya error response nahi bhej sakte; handler `next(err)` se Express ke default handler ko deta hai jo connection band karta hai.                                                                   |
+| **Interim**                                       | Abhi ke liye kaafi, baad ke phase mein replace (e.g. Phase 2 ka `clientErrorHandler` Phase 4 mein central `errorHandler` se replace hua).                                                                                        |
+| **Modular monolith**                              | Ek deployable app, andar alag modules (auth, products, ...). Microservices nahi.                                                                                                                                                 |
+| **Mock provider**                                 | Payment/email ke test-safe fake adapters; real credentials kabhi nahi.                                                                                                                                                           |
+| **Exact pinning**                                 | `--save-exact` + committed `package-lock.json`: har machine par same versions.                                                                                                                                                   |
+| **Supertest**                                     | Bina port khole app par HTTP requests chalane ka tool (`request(app).get(...)`).                                                                                                                                                 |
+| **Mutation check**                                | Code jaan-boojh ke todke dekhna ki test fail hota hai ya nahi; pass-karne-wale-lekin-bekar tests pakadne ke liye.                                                                                                                |
+| **Status ladder**                                 | Matrix mein `planned → ... → verified`; evidence ke bina aage nahi badhta.                                                                                                                                                       |
 
 ## 7. Build Log (phase by phase)
 
@@ -512,7 +522,7 @@ Order: `health -> static -> /api/v1 (parsers + modules) -> 404 -> error handler`
 
 **Step 4 — Safe 404 (`src/http/not-found.js`).** Fixed JSON body `{error:{code:'NOT_FOUND', message:'Resource not found'}}`; requested path echo nahi hota.
 
-**Step 5 — 4xx errors ka interim handler (`src/http/client-errors.js`).** Problem: malformed JSON, oversized body ya undecodable URL param par Express ka default handler non-production mein stack trace wala HTML deta. Isliye chhota handler jo sirf 4xx ko fixed message ke saath JSON mein map karta hai; baaki errors `next(err)` se aage jaate hain.
+**Step 5 — 4xx errors ka interim handler (`src/http/client-errors.js`).** _(Phase 4 mein ye hata ke central `errorHandler` aaya.)_ Problem: malformed JSON, oversized body ya undecodable URL param par Express ka default handler non-production mein stack trace wala HTML deta. Isliye chhota handler jo sirf 4xx ko fixed message ke saath JSON mein map karta hai; baaki errors `next(err)` se aage jaate hain.
 
 ```js
 export function clientErrorHandler(err, _req, res, next) {
@@ -705,6 +715,98 @@ Health probe log nahi hua, aur `Authorization`/`Cookie`/query/body mein rakhe 4 
 
 Result: 123/123 tests pass, lint aur format clean.
 
+### Phase 4 — Centralized error handling
+
+**Goal:** saare errors ek jagah se ek jaise safe response mein nikalein; expected (operational) aur unexpected (bug/infra) failures ka logging alag ho; production mein stack ya internal detail client ko na jaye; Express 5 ke async semantics bina faltu wrapper ke use hon.
+
+Design decision: Phase 2–3 ke interim pieces (`clientErrorHandler`, route-guards ke inline error JSON, examples ke helper functions) ko hata ke **sab kuch ek hi pipeline** se guzaara: code `throw`/`next(err)` kare, aur sirf `errorHandler` response banaye.
+
+Sequence:
+
+**Step 1 — Error hierarchy (`src/errors/app-errors.js`).** Base `AppError(message, { statusCode, code, details, headers, cause, isOperational })`, aur subclasses: `ValidationError` 400, `BadRequestError` 400, `AuthenticationError` 401, `AuthorizationError` 403, `NotFoundError` 404, `MethodNotAllowedError` 405 (+`Allow`), `ConflictError` 409, `PayloadTooLargeError` 413, `UnsupportedMediaTypeError` 415, `RateLimitError` 429 (+`Retry-After`), `InternalError` 500 (`isOperational = false`).
+
+```js
+export class NotFoundError extends AppError {
+  constructor(message = 'Resource not found', options = {}) {
+    super(message, { ...options, statusCode: 404, code: 'NOT_FOUND' });
+  }
+}
+```
+
+Contract: `AppError.message` client ko seedha dikhta hai, isliye usme internal detail ya raw user input nahi; wo `cause` mein jata hai (sirf log hota hai).
+
+**Step 2 — Classification (`src/errors/to-app-error.js`).** Koi bhi thrown value ek `AppError` banti hai:
+
+```js
+export function toAppError(err) {
+  if (err instanceof AppError) return err; // humne jaan-boojh kar throw kiya
+  if (err instanceof ZodError)
+    return new ValidationError('Validation failed', { details, cause: err });
+  const status = err?.status ?? err?.statusCode; // body-parser / Express ke 4xx errors
+  if (Number.isInteger(status) && status >= 400 && status <= 499)
+    return fromClientStatus(status, err);
+  return new InternalError({ cause: err }); // bug, DB down, throw 'string', null...
+}
+```
+
+Library ke 4xx errors par raw `err.message` kabhi copy nahi hota (malformed JSON ke message mein body ka tukda aa sakta hai); fixed message milta hai.
+
+**Step 3 — Central error middleware (`src/http/error-handler.js`).** 4 arguments `(err, req, res, next)` (isi se Express ise error middleware samajhta hai).
+
+```js
+const appError = toAppError(err);
+res.locals.errorCode = appError.code; // request log line mein jayega
+if (!appError.isOperational) log.error({ err: original, headersSent }, 'unexpected error');
+if (res.headersSent) return next(err); // Express default handler connection band karega
+if (appError.headers) res.set(appError.headers);
+res.status(appError.statusCode).json({ error: { code, message, ...(details && { details }) } });
+```
+
+Body mein kabhi stack, `cause` ya raw error text nahi. Handler mein **koi `NODE_ENV` branch nahi**, isliye production aur development ke response bodies same hain (safety env config par depend nahi karti). Dev mein diagnostics logs se milti hain.
+
+**Step 4 — Logging: expected vs unexpected.**
+
+- Operational (404, 409, validation...): extra log line nahi, stack nahi; request log ki ek line mein `status` + `errorCode` (`warn` level). Cause ho to `debug` par.
+- Unexpected: alag `error`-level line `unexpected error` with original error + stack (`err` serializer) aur `requestId`; request line `status: 500, errorCode: INTERNAL_ERROR`.
+- `throw 'string'` jaisi non-Error value: sirf type log hota hai (`Non-Error value thrown (string)`), content nahi.
+  `request-logger.js` mein ek line add hui: `if (res.locals.errorCode) entry.errorCode = res.locals.errorCode;`.
+
+**Step 5 — `res.headersSent` case.** Response shuru ho chuka ho (jaise streaming beech mein fail) to status/body badal nahi sakte. Handler log karke `next(err)` deta hai; Express ka default handler connection destroy karta hai, to client ko truncated response milta hai, "successful" jaisa nahi dikhta.
+
+**Step 6 — Final 404 aur wiring.** `notFound` ab `next(new NotFoundError())` karta hai (response khud nahi banata), aur `app.js` mein sabse last:
+
+```js
+app.use(notFound);
+app.use(createErrorHandler({ logger }));
+```
+
+`src/http/client-errors.js` delete.
+
+**Step 7 — Purane code ko same pipeline par migrate kiya.** Route guards ab `next(new UnsupportedMediaTypeError(...))`, `next(new ValidationError(..., { code: 'INVALID_PARAMETER' }))`, `next(new MethodNotAllowedError({ allow }))` karte hain. Notes examples `throw new NotFoundError('Note not found')` karte hain aur body ko `noteBody.parse(...)` se validate karte hain (ZodError -> 400 automatically). Response bodies bilkul same rahe: purane 123 tests bina badlaav pass hue. Ek jaan-boojh ke chhoda gaya exception: `/middleware/guarded` demo apna 403 inline bhejta hai, kyunki wo "response bhejke pipeline rokna" dikhata hai.
+
+**Step 8 — Teaching routes (`/api/v1/examples/errors`, non-prod only).** `/raise/:kind` (validation, authentication, authorization, not-found, conflict, rate-limit), `/sync-throw`, `/async-reject` (plain `async`, koi try/catch ya wrapper nahi), `/next-err`, `/throw-string`, `/service/reserve/:sku` (async service ka domain error) aur `/service/load` (nakli DB driver error jisme host/port hai), `/after-headers` (`res.write('partial')` ke baad error).
+
+**Step 9 — Tests (+60, total 183 tests, 10 suites).**
+
+| File                                       | Kya prove karta hai                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/unit/errors.test.js`                | har class ka status/code/operational; `InternalError` cause rakhta hai; `toAppError` table (AppError, ZodError, library 4xx, 418, plain Error, 5xx, string, null, undefined, object); handler fake req/res ke saath: safe body + headers + `errorCode`, unexpected = error-level + original stack, operational = koi error-level nahi, non-Error content log nahi, `headersSent` par `next(err)` aur kuch nahi likha, `/health` jaise case mein bina request logger ke bhi chalta hai                                                          |
+| `tests/integration/error-handling.test.js` | har operational kind ka status/code; `Retry-After`; sync throw / rejected Promise / `next(err)` / thrown string sab generic 500 aur body mein koi internal text nahi, logs mein asli error + stack; service ke 409/404; DB driver error ka host/port client ko nahi; unknown route; malformed/oversized body; ZodError -> 400 details; production vs development bodies identical; production mein teaching routes unmounted; asli server par `after-headers` (status 200, body `partial`, `complete === false`, log mein `headersSent: true`) |
+
+**Step 10 — Mutation checks (chaar).** Jaan-boojh ke todke dekha:
+
+- `headersSent` guard hataya -> 2 tests fail.
+- 500 body mein asli error message daala (leak) -> 11 tests fail.
+- Error handler mount hi nahi kiya -> 50 tests fail.
+- Unexpected errors ko `error` ki jagah `warn` par log kiya -> 7 tests fail.
+  Restore ke baad 183/183.
+
+**Step 11 — Real server smoke.** Development: `sync-throw`, `async-reject`, `service/load` sab `{"error":{"code":"INTERNAL_ERROR","message":"Internal Server Error"}}` (500); `raise/conflict` 409; `raise/rate-limit` 429; `after-headers` par curl exit 18 (transfer truncated, yaani connection sahi band hua). Server log mein `unexpected error` line mein asli message aur stack. Production (`NODE_ENV=production`): `/nope` 404, teaching routes 404, malformed JSON 400 "Malformed request body", aur production log mein `"stack"` 0 baar.
+
+**Step 12 — Docs aur matrix.** `docs/modules/error-handling.md` (propagation, classification, response contract, logging, `headersSent`, naya error type kaise add karein); routing/middleware docs mein interim lines hataayi. Matrix section 4 ke 9 rows exact test paths ke saath `verified`.
+
+Result: 183/183 tests pass, lint aur format clean.
+
 ## 8. Current project structure
 
 ```
@@ -725,17 +827,18 @@ Result: 123/123 tests pass, lint aur format clean.
 │   │   └── health.routes.js      # /health/live, /health/ready
 │   ├── routes/api.routes.js      # /api/v1: parsers + module mounts (+ examples, non-prod)
 │   ├── modules/<name>/<name>.routes.js   # auth users sellers products cart orders admin (empty, mounted)
-│   ├── http/                     # not-found.js, client-errors.js, route-guards.js
-│   └── examples/                 # teaching only, /api/v1/examples/*, non-prod: http-examples, middleware-examples
+│   ├── errors/                   # app-errors.js (hierarchy), to-app-error.js (classification)
+│   ├── http/                     # error-handler.js, not-found.js, route-guards.js
+│   └── examples/                 # teaching only, /api/v1/examples/*, non-prod: http-examples, middleware-examples, error-examples
 ├── public/example.txt            # served at /static
 ├── tests/
 │   ├── helpers/log-capture.js    # Pino ko memory mein capture (tests)
-│   ├── unit/        config, readiness, middleware-units .test.js
-│   └── integration/ health, server, routing, static, middleware .test.js
+│   ├── unit/        config, readiness, middleware-units, errors .test.js
+│   └── integration/ health, server, routing, static, middleware, error-handling .test.js
 └── docs/
     ├── architecture/ (overview.md, phases.md, decisions/)
     ├── coverage/EXPRESS_CONCEPT_MATRIX.md
-    ├── modules/ application-foundation.md, routing-and-http.md, middleware.md
+    ├── modules/ application-foundation.md, routing-and-http.md, middleware.md, error-handling.md
     └── runbooks/ security/ testing/   # abhi sirf index
 ```
 
@@ -771,21 +874,24 @@ Endpoints abhi:
 | `/api/v1/{auth,users,sellers,products,cart,orders,admin}/*` | `404` abhi (modules khaali)                                                                                                                            |
 | `/api/v1/examples/*`                                        | Teaching endpoints (non-production only): `ping`, `echo/:value`, `echo/json`, `echo/form`, `old-notes`, `notes`, `notes/:id`, `notes/:noteId/comments` |
 | `/api/v1/examples/middleware/*`                             | Middleware demos (non-production only): `chain`, `conditional`, `guarded`, `fail`, `app-config`, `stats`                                               |
+| `/api/v1/examples/errors/*`                                 | Error demos (non-production only): `raise/:kind`, `sync-throw`, `async-reject`, `next-err`, `throw-string`, `service/*`, `after-headers`               |
 | anything else                                               | `404 {"error":{"code":"NOT_FOUND","message":"Resource not found"}}`                                                                                    |
 
 ## 10. Verification results (ab tak)
 
-Phase 3 ke end par actual run hue commands (pichhle phases ke checks bhi included):
+Phase 4 ke end par actual run hue commands (pichhle phases ke checks bhi included):
 
 | Command                                                       | Result                                                         |
 | ------------------------------------------------------------- | -------------------------------------------------------------- |
-| `npm test`                                                    | 8 suites, 123 tests passed                                     |
+| `npm test`                                                    | 10 suites, 183 tests passed                                    |
 | `npm run lint`                                                | clean                                                          |
 | `npm run format:check`                                        | clean                                                          |
 | `node src/server.js` + curl (`/health/live`, `/health/ready`) | dono 200; SIGTERM par exit                                     |
 | `npm run dev` + temp `.env`                                   | `.env` load hua, `/health/ready` 200                           |
 | `npm audit --omit=dev`                                        | 0 vulnerabilities                                              |
 | `npm audit`                                                   | dev-only (Jest chain) moderate advisories, fix apply nahi kiya |
+
+Phase 4 extras: chaar mutation checks (`headersSent` guard hataya -> 2 fail; 500 body mein asli message -> 11 fail; error handler unmount -> 50 fail; unexpected error `warn` par -> 7 fail; restore par 183/183); real server smoke (dev: generic 500s, 409, 429, truncated `after-headers`; production: 404/400 safe, logs mein `"stack"` 0).
 
 Phase 3 extras: teen mutation checks (requestId logger ke baad -> 3 fail; Helmet `/api/v1` ke baad -> 5 fail; guard se `return` hataya -> 1 fail; restore par 123/123); real server smoke (response headers, request-ID reuse, JSON log lines, health probe unlogged, 4 secrets ka logs mein 0 match).
 
@@ -801,8 +907,8 @@ Environment-dependent checks (Postgres, Redis, Docker) abhi applicable nahi.
 | 1   | Foundation (app/server, config, health)                     | done    |
 | 2   | HTTP & routing (`/api/v1`, params/query/body, static, 404)  | done    |
 | 3   | Middleware pipeline, request IDs, `res.locals`, `req.app`   | done    |
-| 4   | Error handling (hierarchy, `headersSent`)                   | next    |
-| 5   | Validation, pagination, OpenAPI + Swagger                   | planned |
+| 4   | Error handling (hierarchy, `headersSent`)                   | done    |
+| 5   | Validation, pagination, OpenAPI + Swagger                   | next    |
 | 6   | PostgreSQL + Prisma, migrations, repositories, transactions | planned |
 | 7   | Authentication (hashing, refresh rotation, verify/reset)    | planned |
 | 8   | Authorization, ownership, sessions, CSRF                    | planned |
@@ -828,11 +934,11 @@ Detail: [docs/architecture/phases.md](docs/architecture/phases.md).
 
 ## 12. Concept coverage matrix ka status
 
-[docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md): 235 concepts. Abhi sections 1 (Foundation, 7), 2 (HTTP & routing, 14) aur 3 (Middleware, 14) `verified` (35 concepts); baaki sab `planned`. Har phase ke baad sirf evidence-backed rows update hote hain.
+[docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md): 235 concepts. Abhi sections 1 (Foundation, 7), 2 (HTTP & routing, 14), 3 (Middleware, 14) aur 4 (Error handling, 9) `verified` (44 concepts); baaki sab `planned`. Har phase ke baad sirf evidence-backed rows update hote hain.
 
 ## 13. Is project ko recipe ki tarah reuse karna
 
-Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 ka reusable sequence:
+Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 ka reusable sequence:
 
 1. Pehle `CLAUDE.md` + docs skeleton + coverage matrix banao (rules aur tracking pehle, code baad mein).
 2. `npm init`, `"type": "module"`, `engines` set karo; dependencies `--save-exact`; lockfile commit.
@@ -849,12 +955,18 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 ka reusable sequence:
 13. Middleware order: `requestId -> requestLogger -> helmet -> health -> static -> /api (parsers, modules) -> 404 -> error handler`. Logger ko injectable (`stream`) rakho taaki tests logs capture kar sakein.
 14. Logs mein sirf metadata: method, status, duration, route _pattern_, request ID. Query/headers/cookies/bodies/path-param values nahi; redaction sirf safety net.
 15. Production middleware (`src/middleware/`) aur teaching demos (`src/examples/`, non-prod) alag folders mein.
+16. Errors: `AppError` hierarchy (status + stable `code` + `isOperational`), `toAppError()` jo koi bhi thrown value classify kare, aur sabse last ek `errorHandler`. Code sirf throw/`next(err)` kare; response koi aur jagah na bane.
+17. Error response mein `NODE_ENV` branch mat rakho; client ko stack/cause/raw message kabhi nahi. Diagnostics logs mein: unexpected = `error` level + original stack, operational = request line mein `errorCode`.
+18. Express 5 mein async handlers par wrapper mat lagao. `res.headersSent` check karke default handler ko delegate karo.
 
 ## 14. Known limitations / tradeoffs
 
 - Graceful shutdown abhi minimal hai (server close + readiness 503). Request draining with deadline aur ordered dependency close Phase 19 mein.
 - `/health/ready` abhi koi real dependency check nahi karta (koi dependency hai hi nahi); DB check Phase 6 mein.
-- 404 aur 4xx handling (`notFound`, `clientErrorHandler`) interim hai: sirf 4xx map hote hain, unexpected 5xx par Express ka default handler chalta hai. Central error hierarchy Phase 4 mein.
+- Validation errors abhi 400 hain aur `details` plain `{path, message}` array hai; source (`body|query|params`) aur API-wide response convention Phase 5 mein finalize.
+- DB/driver errors abhi sab generic 500 hain; known DB errors (unique violation -> `ConflictError`) ka mapping Phase 6 mein repository boundary par.
+- Unexpected-error logs mein asli error message aata hai; Pino redaction sirf known keys ko cover karti hai, to error messages secrets se mat banao.
+- Rate limiting, authentication/authorization errors ke classes bane hain lekin unhe throw karne wale features aage ke phases mein.
 - `/api/v1/examples` abhi inline Zod use karta hai; shared validation + response convention Phase 5 mein. Examples in-memory hain aur production mein mount nahi hote.
 - Query values strings hote hain; typed coercion/validation Phase 5 mein.
 - Logging Pino hai, lekin metrics, Sentry, trace propagation aur dashboards Phase 19 mein. Config-error message (logger banne se pehle) `console.error` hai.
@@ -867,35 +979,39 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 ka reusable sequence:
 
 ## 15. FAQ / troubleshooting
 
-| Problem                                                      | Wajah / fix                                                                                                                                                                                          |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Server start nahi hota, `Invalid environment configuration`  | Env var galat hai (e.g. `PORT=abc`, `NODE_ENV=staging`). Message mein saari invalid fields listed hain. `.env` ya shell env theek karo.                                                              |
-| `EADDRINUSE`                                                 | Port pehle se use mein hai. `PORT` badlo ya purana process band karo (`lsof -i :3000`).                                                                                                              |
-| `.env` badalne par kuch nahi badla                           | `npm run dev` `.env` change par restart nahi karta; manually restart karo. Aur shell mein pehle se set env var `.env` ko override kar deta hai (dotenv override nahi karta).                         |
-| `npm test` par `ExperimentalWarning: VM Modules`             | Normal hai: Jest native ESM `--experimental-vm-modules` se chalta hai.                                                                                                                               |
-| Test mein `jest is not defined`                              | ESM mein `jest` global nahi; `import { jest } from '@jest/globals'` karo.                                                                                                                            |
-| `GET /api/v1/auth/login` 404 kyun deta hai?                  | Module abhi khaali hai (Phase 7 mein bhara jayega). Fake endpoint nahi banate.                                                                                                                       |
-| `/api/v1/examples/*` production mein 404 kyun?               | Teaching endpoints sirf `NODE_ENV !== 'production'` mein mount hote hain.                                                                                                                            |
-| `/notes/abc` par 400 kyun?                                   | `requireNumericParam('id')` route middleware positive integer maangta hai. Express 5 mein inline regex (`:id(\\d+)`) support nahi.                                                                   |
-| Tests mein logs kyun nahi dikhte?                            | `NODE_ENV=test` par `LOG_LEVEL` default `silent` hai. Dekhna ho to `LOG_LEVEL=debug npm test`, ya test mein `createLogCapture()` use karo.                                                           |
-| Mera `X-Request-Id` badal gaya                               | Sirf `[A-Za-z0-9._-]{8,128}` accept hota hai; chhota/lamba/special chars wala ID replace hota hai (log injection se bachne ke liye).                                                                 |
-| Logs mein full URL/params kyun nahi dikhte?                  | Intentional: route pattern + request ID log hota hai; query/path-param values mein tokens ho sakte hain. Debug ke liye request ID se context dhundo.                                                 |
-| `app.get(...)` `createApp()` ke baad lagaya, 404 aa raha hai | 404 handler pehle registered hai; late routes tak request pahunchti hi nahi. Route router ke andar add karo.                                                                                         |
-| Naya env var kaise add karun?                                | `src/config/env.js` ke Zod schema mein + `.env.example` mein dono jagah; config object se hi padho, `process.env` seedha nahi.                                                                       |
-| Naya route kaise add karun?                                  | `docs/modules/routing-and-http.md` -> "How to add a new route".                                                                                                                                      |
-| Naya phase khatam hone par kya update karun?                 | Tests + `docs/modules/<module>.md` + matrix rows (evidence ke saath) + **README**: status, TOC, Build Log (naya phase), structure, run/endpoints, verification, roadmap, glossary, FAQ, limitations. |
-| `npm audit` moderate dikhata hai                             | Sirf Jest ke dev-time dependency chain mein; `npm audit --omit=dev` = 0. Suggested `--force` fix Jest ko downgrade karta hai, isliye nahi lagaya.                                                    |
+| Problem                                                             | Wajah / fix                                                                                                                                                                                          |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server start nahi hota, `Invalid environment configuration`         | Env var galat hai (e.g. `PORT=abc`, `NODE_ENV=staging`). Message mein saari invalid fields listed hain. `.env` ya shell env theek karo.                                                              |
+| `EADDRINUSE`                                                        | Port pehle se use mein hai. `PORT` badlo ya purana process band karo (`lsof -i :3000`).                                                                                                              |
+| `.env` badalne par kuch nahi badla                                  | `npm run dev` `.env` change par restart nahi karta; manually restart karo. Aur shell mein pehle se set env var `.env` ko override kar deta hai (dotenv override nahi karta).                         |
+| `npm test` par `ExperimentalWarning: VM Modules`                    | Normal hai: Jest native ESM `--experimental-vm-modules` se chalta hai.                                                                                                                               |
+| Test mein `jest is not defined`                                     | ESM mein `jest` global nahi; `import { jest } from '@jest/globals'` karo.                                                                                                                            |
+| `GET /api/v1/auth/login` 404 kyun deta hai?                         | Module abhi khaali hai (Phase 7 mein bhara jayega). Fake endpoint nahi banate.                                                                                                                       |
+| `/api/v1/examples/*` production mein 404 kyun?                      | Teaching endpoints sirf `NODE_ENV !== 'production'` mein mount hote hain.                                                                                                                            |
+| `/notes/abc` par 400 kyun?                                          | `requireNumericParam('id')` route middleware positive integer maangta hai. Express 5 mein inline regex (`:id(\\d+)`) support nahi.                                                                   |
+| Tests mein logs kyun nahi dikhte?                                   | `NODE_ENV=test` par `LOG_LEVEL` default `silent` hai. Dekhna ho to `LOG_LEVEL=debug npm test`, ya test mein `createLogCapture()` use karo.                                                           |
+| Mera `X-Request-Id` badal gaya                                      | Sirf `[A-Za-z0-9._-]{8,128}` accept hota hai; chhota/lamba/special chars wala ID replace hota hai (log injection se bachne ke liye).                                                                 |
+| Logs mein full URL/params kyun nahi dikhte?                         | Intentional: route pattern + request ID log hota hai; query/path-param values mein tokens ho sakte hain. Debug ke liye request ID se context dhundo.                                                 |
+| `app.get(...)` `createApp()` ke baad lagaya, 404 aa raha hai        | 404 handler pehle registered hai; late routes tak request pahunchti hi nahi. Route router ke andar add karo.                                                                                         |
+| Naya error type kaise add karun?                                    | `src/errors/app-errors.js` mein `AppError` extend karo (status + stable `code`), service/handler mein `throw` karo. Handler mein kuch nahi badalna. Detail: `docs/modules/error-handling.md`.        |
+| Production mein 500 par kuch detail kyun nahi milta?                | By design: client ko generic message. Asli error + stack server log mein `unexpected error` line (`level: 50`) mein hai; response header `X-Request-Id` se wo line dhundo.                           |
+| `asyncHandler`/try-catch kyun nahi?                                 | Express 5 async handler ke throw aur rejected Promise ko khud error middleware tak bhejta hai. Express 4 mein wrapper chahiye hota tha.                                                              |
+| Mere `throw new Error('...')` ka message client ko kyun nahi dikha? | Plain `Error` unexpected maana jata hai (generic 500). Client ko message dikhana hai to matching `AppError` subclass throw karo.                                                                     |
+| Naya env var kaise add karun?                                       | `src/config/env.js` ke Zod schema mein + `.env.example` mein dono jagah; config object se hi padho, `process.env` seedha nahi.                                                                       |
+| Naya route kaise add karun?                                         | `docs/modules/routing-and-http.md` -> "How to add a new route".                                                                                                                                      |
+| Naya phase khatam hone par kya update karun?                        | Tests + `docs/modules/<module>.md` + matrix rows (evidence ke saath) + **README**: status, TOC, Build Log (naya phase), structure, run/endpoints, verification, roadmap, glossary, FAQ, limitations. |
+| `npm audit` moderate dikhata hai                                    | Sirf Jest ke dev-time dependency chain mein; `npm audit --omit=dev` = 0. Suggested `--force` fix Jest ko downgrade karta hai, isliye nahi lagaya.                                                    |
 
 ## 16. Docs index
 
-| Area                  | Where                                                                                                                                                                                                            |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Working rules         | [CLAUDE.md](CLAUDE.md)                                                                                                                                                                                           |
-| Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md)                                                                                                                                                   |
-| Phase plan            | [docs/architecture/phases.md](docs/architecture/phases.md)                                                                                                                                                       |
-| ADRs                  | [docs/architecture/decisions/](docs/architecture/decisions/README.md)                                                                                                                                            |
-| Module docs           | [docs/modules/](docs/modules/README.md) (abhi: [application-foundation](docs/modules/application-foundation.md), [routing-and-http](docs/modules/routing-and-http.md), [middleware](docs/modules/middleware.md)) |
-| Runbooks              | [docs/runbooks/](docs/runbooks/README.md)                                                                                                                                                                        |
-| Security              | [docs/security/](docs/security/README.md)                                                                                                                                                                        |
-| Test strategy         | [docs/testing/](docs/testing/README.md)                                                                                                                                                                          |
-| Concept matrix        | [docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md)                                                                                                                               |
+| Area                  | Where                                                                                                                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Working rules         | [CLAUDE.md](CLAUDE.md)                                                                                                                                                                                                                                             |
+| Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md)                                                                                                                                                                                                     |
+| Phase plan            | [docs/architecture/phases.md](docs/architecture/phases.md)                                                                                                                                                                                                         |
+| ADRs                  | [docs/architecture/decisions/](docs/architecture/decisions/README.md)                                                                                                                                                                                              |
+| Module docs           | [docs/modules/](docs/modules/README.md) (abhi: [application-foundation](docs/modules/application-foundation.md), [routing-and-http](docs/modules/routing-and-http.md), [middleware](docs/modules/middleware.md), [error-handling](docs/modules/error-handling.md)) |
+| Runbooks              | [docs/runbooks/](docs/runbooks/README.md)                                                                                                                                                                                                                          |
+| Security              | [docs/security/](docs/security/README.md)                                                                                                                                                                                                                          |
+| Test strategy         | [docs/testing/](docs/testing/README.md)                                                                                                                                                                                                                            |
+| Concept matrix        | [docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md)                                                                                                                                                                                 |

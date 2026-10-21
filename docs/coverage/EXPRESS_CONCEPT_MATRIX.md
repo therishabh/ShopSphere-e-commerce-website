@@ -11,7 +11,7 @@ Single source of truth for what is actually done. Every concept named in the [pl
 5. Documentation links point to the page the owning phase will create; a link is valid only after that phase lands.
 6. Phase 24 audits every row. Phase 25 must not report "all concepts complete" unless every row is `verified`.
 
-**Current state: Phase 3 complete. Sections 1–3 are `verified`; every other concept is `planned`.**
+**Current state: Phase 4 complete. Sections 1–4 are `verified`; every other concept is `planned`.**
 
 Note: the `/health/ready` row is verified against fake dependency checks; the database-backed check is tracked under Persistence (Phase 6).
 
@@ -69,15 +69,15 @@ Note: the `/health/ready` row is verified against fake dependency checks; the da
 
 | Concept | Implementation / demo | Test / verification | Documentation | Status |
 | --- | --- | --- | --- | --- |
-| Application error hierarchy | — | — | [error-handling.md](../modules/error-handling.md) | planned |
-| Consistent safe error response | — | — | [error-handling.md](../modules/error-handling.md) | planned |
-| Final 404 handler | — | — | [error-handling.md](../modules/error-handling.md) | planned |
-| Final error middleware | — | — | [error-handling.md](../modules/error-handling.md) | planned |
-| Express 5 async rejection handling (no redundant wrappers) | — | — | [error-handling.md](../modules/error-handling.md) | planned |
-| Sync throw handling | — | — | [error-handling.md](../modules/error-handling.md) | planned |
-| `res.headersSent` delegation | — | — | [error-handling.md](../modules/error-handling.md) | planned |
-| Operational vs programmer error logging | — | — | [error-handling.md](../modules/error-handling.md) | planned |
-| No stack/internal leakage in production | — | — | [error-handling.md](../modules/error-handling.md) | planned |
+| Application error hierarchy | `src/errors/app-errors.js`, `src/errors/to-app-error.js` | `tests/unit/errors.test.js` (classes, classification table) | [error-handling.md](../modules/error-handling.md) | verified |
+| Consistent safe error response | `src/http/error-handler.js` | `tests/unit/errors.test.js`, `tests/integration/error-handling.test.js` (same shape for every error type) | [error-handling.md](../modules/error-handling.md) | verified |
+| Final 404 handler | `src/http/not-found.js` | `tests/integration/error-handling.test.js`, `tests/integration/routing.test.js` | [error-handling.md](../modules/error-handling.md) | verified |
+| Final error middleware | `src/http/error-handler.js`, mounted last in `src/app.js` | `tests/integration/error-handling.test.js` (mutation-checked: unmounted handler fails 50 tests) | [error-handling.md](../modules/error-handling.md) | verified |
+| Express 5 async rejection handling (no redundant wrappers) | `src/examples/error-examples.routes.js` (`/async-reject`, `/service/*`: plain `async`, no wrapper) | `tests/integration/error-handling.test.js` | [error-handling.md](../modules/error-handling.md) | verified |
+| Sync throw handling | `src/examples/error-examples.routes.js` (`/sync-throw`, `/throw-string`, `/next-err`) | `tests/integration/error-handling.test.js` | [error-handling.md](../modules/error-handling.md) | verified |
+| `res.headersSent` delegation | `src/http/error-handler.js`; `/after-headers` | `tests/unit/errors.test.js` (fake res), `tests/integration/error-handling.test.js` (real server: truncated response; mutation-checked) | [error-handling.md](../modules/error-handling.md) | verified |
+| Operational vs programmer error logging | `src/http/error-handler.js`, `src/middleware/request-logger.js` (`errorCode`) | `tests/unit/errors.test.js`, `tests/integration/error-handling.test.js` (error-level only for unexpected; mutation-checked) | [error-handling.md](../modules/error-handling.md) | verified |
+| No stack/internal leakage in production | `src/http/error-handler.js` (no `NODE_ENV` branch) | `tests/integration/error-handling.test.js` (production and development bodies identical; mutation-checked) | [error-handling.md](../modules/error-handling.md) | verified |
 
 ## 5. Validation & API contracts (Phase 5)
 

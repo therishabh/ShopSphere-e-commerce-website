@@ -18,9 +18,9 @@ Phase 3 added request ID, request logger and security headers before everything 
 | `/static` before the API      | Asset requests never reach body parsers. `index:false`, `dotfiles:'ignore'`, `maxAge:'1h'`; files come from `public/`. Traversal and dotfile requests end in the 404.                    |
 | Parsers inside `/api/v1` only | Parsing cost and attack surface apply only where bodies are expected. Explicit `100kb` limit (`BODY_LIMIT`). `urlencoded` uses `extended:false` (flat keys, no nested-object expansion). |
 | Modules, then examples        | Feature routers own their prefix; examples are mounted last and only when `NODE_ENV !== 'production'`.                                                                                   |
-| 404 then error handler last   | Anything unmatched gets one safe JSON 404; errors raised above are mapped by `clientErrorHandler`.                                                                                       |
+| 404 then error handler last   | Anything unmatched gets one safe JSON 404; errors raised above are rendered by the central `errorHandler` ([error-handling.md](error-handling.md)).                                      |
 
-`notFound` and `clientErrorHandler` are interim: Phase 4 replaces them with the central error hierarchy. `clientErrorHandler` only maps 4xx (malformed JSON → 400, oversized → 413, undecodable URL param → 400) with fixed messages; non-4xx errors still go to Express's default handler until Phase 4.
+`notFound` and the error handler are part of the central error pipeline (Phase 4): `notFound` raises `NotFoundError`, and `errorHandler` renders every error (malformed JSON → 400, oversized → 413, undecodable URL param → 400, unexpected → generic 500). Details: [error-handling.md](error-handling.md).
 
 ## Route organisation
 
@@ -53,7 +53,7 @@ Plural nouns, lowercase, kebab-case for multi-word segments; the HTTP method car
 | 413              | Body over limit                                            |
 | 415              | Wrong `Content-Type` for the endpoint                      |
 
-Error body shape (interim, finalised in Phases 4–5): `{ "error": { "code", "message", "details?" } }`. The 404 never echoes the requested path.
+Error body shape (see [error-handling.md](error-handling.md); validation details refined in Phase 5): `{ "error": { "code", "message", "details?" } }`. The 404 never echoes the requested path.
 
 ## The examples router (`/api/v1/examples`)
 
@@ -75,4 +75,4 @@ Teaching endpoints that really work against per-app in-memory data; not a busine
 ## Tradeoffs
 
 - In-memory examples reset per app instance; fine for demos, intentionally not a persistence pattern.
-- Interim error handling covers 4xx only; unexpected 5xx output is Express's default until Phase 4.
+- Route guards and examples raise `AppError`s instead of writing error JSON themselves; the one deliberate exception is the `guarded` demo.

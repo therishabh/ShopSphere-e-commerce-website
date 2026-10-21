@@ -14,7 +14,7 @@ The request pipeline every request passes through before and after routing: iden
 5  /static (express.static)
 6  /api/v1 router:  express.json -> express.urlencoded -> module routers -> examples (non-prod)
 7  notFound
-8  clientErrorHandler   (error middleware, 4 args; Phase 4 replaces with the central handler)
+8  errorHandler         (error middleware, 4 args; src/http/error-handler.js)
 ```
 
 Why this order:
@@ -36,7 +36,7 @@ Why this order:
 | Router-level (`router.use`)             | `src/routes/api.routes.js`, example routers | body parsers on `/api/v1`; `trace('router-level')`           |
 | Route-level (args to `router.get(...)`) | `src/http/route-guards.js`, examples        | `requireJson`, `requireNumericParam`, `trace('route-a')`     |
 | Built-in / third-party                  | `express.json`, `express.static`, `helmet`  |                                                              |
-| Error-handling (4 args)                 | `src/http/client-errors.js`                 | `clientErrorHandler`                                         |
+| Error-handling (4 args)                 | `src/http/error-handler.js`                 | `errorHandler`                                               |
 | Conditional wrappers                    | `src/middleware/conditional.js`             | `unless(isHealthCheck, requestLogger)`, `when(isDebug, ...)` |
 
 ## `next()` semantics
@@ -64,6 +64,7 @@ Gives any handler the owning app, e.g. `req.app.locals.config`, without importin
 ## Logging and sensitive data
 
 - Pino, JSON lines, one per request at response close: `requestId, method, status, durationMs`, plus `route` (the pattern, e.g. `/echo/:value`) when a route matched, or `path` (no query string, max 200 chars) when nothing matched. The route pattern is relative to its router (`/ping`, not `/api/v1/examples/ping`).
+- When the error handler classified a failure, the same line also carries `errorCode` (e.g. `NOT_FOUND`, `INTERNAL_ERROR`).
 - Level: 2xx/3xx `info`, 4xx `warn`, 5xx `error`. A connection closed before the response finished logs `request aborted` at `warn` with `aborted: true`.
 - **Never logged:** query strings, headers (Authorization, Cookie), cookies, request/response bodies, path-parameter values of matched routes (reset/verify tokens will live there).
 - Defense in depth: `REDACT_PATHS` in `src/logging/logger.js` censors `password`, `token`, `authorization`, `cookie`, … (also one level nested) if a developer logs such an object. Redaction is a safety net, not a licence to log bodies.

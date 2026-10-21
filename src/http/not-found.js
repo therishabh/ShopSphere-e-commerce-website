@@ -1,8 +1,10 @@
+import { NotFoundError } from '../errors/app-errors.js';
+
 /**
- * Final fallback for requests no route handled. Responds with a fixed JSON body
- * and does not echo the requested path. Phase 4 replaces this with the central
- * error-handling pipeline.
+ * Final fallback: koi route match na hua to yahan aata hai. Khud response nahi banata; NotFoundError
+ * ko errorHandler tak bhejta hai, taaki 404 ka shape baaki errors jaisa hi rahe. Requested path message
+ * mein echo nahi hota.
  */
-export function notFound(_req, res) {
-  res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Resource not found' } });
+export function notFound(_req, _res, next) {
+  next(new NotFoundError());
 }

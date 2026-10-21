@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { NotFoundError } from '../errors/app-errors.js';
 import {
   methodNotAllowed,
   requireJson,
@@ -14,20 +15,6 @@ import {
  */
 
 const noteBody = z.strictObject({ text: z.string().trim().min(1).max(200) });
-
-function validationError(res, error) {
-  res.status(400).json({
-    error: {
-      code: 'VALIDATION_ERROR',
-      message: 'Invalid request body',
-      details: error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-    },
-  });
-}
-
-function notFound(res, what) {
-  res.status(404).json({ error: { code: 'NOT_FOUND', message: `${what} not found` } });
-}
 
 export function createHttpExamplesRouter() {
   // Fresh store per router instance, so every app (and every test) starts empty.
@@ -67,7 +54,7 @@ export function createHttpExamplesRouter() {
   // otherwise "latest" would be captured as an :id.
   router.get('/notes/latest', (_req, res) => {
     const last = [...notes.values()].at(-1);
-    if (!last) return notFound(res, 'Note');
+    if (!last) throw new NotFoundError('Note not found');
     res.json(last);
   });
 
@@ -79,9 +66,8 @@ export function createHttpExamplesRouter() {
       res.json({ items: [...notes.values()].slice(0, limit) });
     })
     .post(requireJson, (req, res) => {
-      const parsed = noteBody.safeParse(req.body ?? {});
-      if (!parsed.success) return validationError(res, parsed.error);
-      const note = { id: nextNoteId++, text: parsed.data.text };
+      const data = noteBody.parse(req.body ?? {}); // invalid -> ZodError -> central handler -> 400
+      const note = { id: nextNoteId++, text: data.text };
       notes.set(note.id, note);
       comments.set(note.id, []);
       res.status(201).location(`${req.baseUrl}/notes/${note.id}`).json(note);
@@ -93,21 +79,20 @@ export function createHttpExamplesRouter() {
     .all(requireNumericParam('id'))
     .get((req, res) => {
       const note = notes.get(Number(req.params.id));
-      if (!note) return notFound(res, 'Note');
+      if (!note) throw new NotFoundError('Note not found');
       res.json(note);
     })
     .put(requireJson, (req, res) => {
       const id = Number(req.params.id);
-      if (!notes.has(id)) return notFound(res, 'Note');
-      const parsed = noteBody.safeParse(req.body ?? {});
-      if (!parsed.success) return validationError(res, parsed.error);
-      const note = { id, text: parsed.data.text };
+      if (!notes.has(id)) throw new NotFoundError('Note not found');
+      const data = noteBody.parse(req.body ?? {}); // invalid -> ZodError -> central handler -> 400
+      const note = { id, text: data.text };
       notes.set(id, note);
       res.json(note);
     })
     .delete((req, res) => {
       const id = Number(req.params.id);
-      if (!notes.delete(id)) return notFound(res, 'Note');
+      if (!notes.delete(id)) throw new NotFoundError('Note not found');
       comments.delete(id);
       res.status(204).end();
     })
@@ -117,7 +102,7 @@ export function createHttpExamplesRouter() {
   const commentsRouter = Router({ mergeParams: true });
   commentsRouter.use(requireNumericParam('noteId'));
   commentsRouter.use((req, res, next) => {
-    if (!notes.has(Number(req.params.noteId))) return notFound(res, 'Note');
+    if (!notes.has(Number(req.params.noteId))) throw new NotFoundError('Note not found');
     next();
   });
   commentsRouter
@@ -126,10 +111,9 @@ export function createHttpExamplesRouter() {
       res.json({ items: comments.get(Number(req.params.noteId)) });
     })
     .post(requireJson, (req, res) => {
-      const parsed = noteBody.safeParse(req.body ?? {});
-      if (!parsed.success) return validationError(res, parsed.error);
+      const data = noteBody.parse(req.body ?? {}); // invalid -> ZodError -> central handler -> 400
       const list = comments.get(Number(req.params.noteId));
-      const comment = { id: list.length + 1, text: parsed.data.text };
+      const comment = { id: list.length + 1, text: data.text };
       list.push(comment);
       res.status(201).location(`${req.baseUrl}/${comment.id}`).json(comment);
     })
