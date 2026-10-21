@@ -49,7 +49,7 @@ Is repo ka secondary goal: har Express concept (middleware, error handling, `nex
 
 | Area        | Choice                                     | Reason / note                                                                                              |
 | ----------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| Runtime     | Node.js current LTS (`>=24`), ESM          | Native `--env-file`, `--watch`; no TypeScript by choice                                                    |
+| Runtime     | Node.js current LTS (`>=24`), ESM          | Native `--watch`; no TypeScript by choice                                                                  |
 | Framework   | Express 5.3.0                              | Async handler ke rejected promises automatically error middleware tak jaate hain (wrapper ki zarurat nahi) |
 | Core DB     | PostgreSQL + Prisma                        | Relational data, transactions, constraints                                                                 |
 | Alt DB      | MongoDB + Mongoose, sirf isolated lab mein | Core data model mein mix nahi hoga                                                                         |
@@ -123,7 +123,7 @@ Node 24 = current LTS, isliye `engines: ">=24"`.
   "type": "module",
   "engines": { "node": ">=24" },
   "scripts": {
-    "dev": "node --watch --env-file-if-exists=.env src/server.js",
+    "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "lint": "eslint .",
@@ -134,11 +134,11 @@ Node 24 = current LTS, isliye `engines: ">=24"`.
 ```
 
 ```bash
-npm install --save-exact express@5.3.0 zod@4.6.7
+npm install --save-exact express@5.3.0 zod@4.6.7 dotenv@18.0.8
 npm install --save-dev --save-exact jest supertest eslint @eslint/js prettier eslint-config-prettier globals
 ```
 
-- `dotenv` use nahi kiya: dev mein Node ka `--env-file-if-exists=.env`, production mein real environment variables.
+- `.env` loading ke liye `dotenv` (exact pinned) use hota hai, aur sirf `src/server.js` ke `main()` mein `dotenv.config({ quiet: true })` se load hota hai. `loadConfig` aur `createApp` import par `.env` nahi chhuute, isliye tests local `.env` se affect nahi hote. `dotenv` already-set environment variables ko override nahi karta, isliye production mein real env vars hi jeette hain.
 - Jest native ESM ke liye `--experimental-vm-modules` chahiye (Babel transform nahi).
 
 **Step 3 — Tooling config.** `.gitignore` (node_modules, `.env`, coverage; `.env.example` allowed), `.prettierrc.json` (single quotes, trailing commas, width 100), `eslint.config.js` (flat config, `eqeqeq`, `prefer-const`, `no-var`, unused vars error with `_` prefix ignore, `eslint-config-prettier` last, tests ke liye jest globals), `jest.config.js` (`testMatch: tests/**/*.test.js`, `transform: {}`).
@@ -246,9 +246,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 }
 ```
 
-`main()`: `loadConfig()` -> `ConfigError` par message print + `exit(1)`; phir `startServer`; `SIGTERM/SIGINT` par `close()` aur exit. Full graceful drain (deadline, workers, DB/Redis ordered close) Phase 19 mein aayega, abhi sirf stop-on-signal.
+`main()`: pehle `dotenv.config({ quiet: true })` (`.env` load; already-set env vars override nahi hote, `quiet` dotenv ka tip message band karta hai); phir `loadConfig()` -> `ConfigError` par message print + `exit(1)`; phir `startServer`; `SIGTERM/SIGINT` par `close()` aur exit. Full graceful drain (deadline, workers, DB/Redis ordered close) Phase 19 mein aayega, abhi sirf stop-on-signal.
 
-Startup flow: `loadConfig` -> `createReadiness` -> `createApp` -> `listen` -> signal handlers.
+Startup flow: `dotenv.config` -> `loadConfig` -> `createReadiness` -> `createApp` -> `listen` -> signal handlers.
 
 **Step 9 — `.env.example`** (`NODE_ENV`, `HOST`, `PORT`). Real `.env` git mein nahi.
 
@@ -277,6 +277,14 @@ kill -TERM <pid>                   # process exit ho gaya
 **Step 12 — Docs, README, matrix.** `docs/modules/application-foundation.md` likha; Phase 1 ke 7 matrix rows (`app creation`, `app/server split`, `env config`, `startup`, `scripts`, `/health/live`, `/health/ready`) exact test paths ke saath `verified` kiye. `/health/ready` row ke note mein likha ki abhi fake checks se verify hua, DB check Phase 6 mein.
 
 **Step 13 — Audit.** `npm audit --omit=dev` = 0 vulnerabilities. Full `npm audit` mein sirf Jest ke dev-time transitive chain (`sprintf-js` via `istanbul`) ki moderate advisories hain; suggested fix Jest ko v25 par downgrade karta, isliye apply nahi kiya.
+
+**Step 14 — Follow-up: `dotenv` adopt kiya (owner ki preference).** Shuru mein Node ka built-in `--env-file-if-exists` use kiya tha; baad mein `dotenv` par switch kiya:
+
+```bash
+npm install --save-exact dotenv      # 18.0.8
+```
+
+`package.json` ka dev script `node --watch src/server.js` ho gaya, aur `server.js` ke `main()` mein `dotenv.config({ quiet: true })` aaya. Import-time par load nahi kiya taaki tests (`createApp`, `loadConfig`, `startServer`) local `.env` se unaffected rahein.
 
 Result: 23/23 tests pass, lint aur format clean.
 
@@ -408,7 +416,7 @@ Naye Express 5 project ke liye Phase 0 + 1 ka reusable sequence:
 - Koi 404 handler / central error handler abhi nahi (Phase 2 aur 4). Unknown routes par Express ka default response aata hai.
 - Logging abhi `console` hai; structured Pino logging Phase 3/19 mein.
 - Jest ESM experimental warning print karta hai.
-- Git repo abhi initialize nahi hua; commits manual karne honge.
+- `.env` change hone par `npm run dev` auto-restart nahi karta (`--watch` sirf imported files dekhta hai); manually restart karo.
 
 ## 12. Docs index
 

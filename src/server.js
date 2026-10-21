@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import dotenv from 'dotenv';
 import { loadConfig, ConfigError } from './config/env.js';
 import { createApp } from './app.js';
 import { createReadiness } from './health/readiness.js';
@@ -28,6 +29,9 @@ export async function startServer(config, { readiness = createReadiness() } = {}
 }
 
 async function main() {
+  // Local convenience: .env se values load karta hai. Existing environment variables ko override nahi karta.
+  dotenv.config({ quiet: true });
+
   let config;
   try {
     config = loadConfig();
