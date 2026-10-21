@@ -1,3 +1,7 @@
+// Unit tests: conditional helpers (when/unless), request logger, aur logger redaction.
+// Request logger ko fake req/res (EventEmitter) se test karte hain, taaki 'client ne beech mein connection tod diya'
+// jaisa case bhi bina real network ke dikha sakein.
+
 import { EventEmitter } from 'node:events';
 import { jest } from '@jest/globals';
 import { when, unless } from '../../src/middleware/conditional.js';
@@ -5,6 +9,7 @@ import { createRequestLogger } from '../../src/middleware/request-logger.js';
 import { createLogger, REDACT_PATHS } from '../../src/logging/logger.js';
 import { createLogCapture } from '../helpers/log-capture.js';
 
+// when/unless: predicate ke hisaab se middleware chalta hai ya seedha next() par jaata hai.
 describe('when / unless', () => {
   const run = (wrapper, predicateResult) => {
     const inner = jest.fn((_req, _res, next) => next());
@@ -29,7 +34,9 @@ describe('when / unless', () => {
   });
 });
 
+// `res` ko EventEmitter banaya: test `res.emit('close')` karke response band hone ka event simulate karta hai.
 describe('request logger (unit, fake req/res)', () => {
+  // Fake req/res banata hai. `finished: false` = response poora likha jaane se pehle connection tootne ka case.
   function fakes({ finished }) {
     const req = { method: 'GET', originalUrl: '/x?token=abc', route: undefined };
     const res = Object.assign(new EventEmitter(), {
@@ -83,6 +90,7 @@ describe('request logger (unit, fake req/res)', () => {
   });
 });
 
+// Safety net: agar koi galti se password/token/cookie wala object log kare to wo '[Redacted]' ban jaana chahiye.
 describe('logger redaction', () => {
   test('censors sensitive keys if someone logs them', () => {
     const { logger, text } = createLogCapture();

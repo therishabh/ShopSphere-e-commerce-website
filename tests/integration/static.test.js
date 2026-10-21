@@ -1,9 +1,13 @@
+// Integration tests: express.static (/static). Sirf `public/` ki files serve hon; dotfiles, directory listing aur
+// path traversal (`../`) se kuch leak nahi hona chahiye.
+
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config/env.js';
 
 const app = createApp({ config: loadConfig({ NODE_ENV: 'test' }) });
 
+// Supertest se files mangte hain; app ke 404 handler se missing file ka JSON 404 aata hai.
 describe('express.static at /static', () => {
   test('serves a file with type and cache headers', async () => {
     const res = await request(app).get('/static/example.txt');
@@ -23,6 +27,7 @@ describe('express.static at /static', () => {
     expect((await request(app).get('/static/')).status).toBe(404);
   });
 
+  // '%2e%2e%2f' = URL-encoded '../' (parent folder). Ye block hona chahiye aur package.json ka content kabhi nahi dikhna chahiye.
   test.each(['/static/.env', '/static/%2e%2e%2fpackage.json', '/static/..%2fpackage.json'])(
     'dotfiles and path traversal are not served: %s',
     async (path) => {

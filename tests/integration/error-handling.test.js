@@ -1,3 +1,7 @@
+// Integration tests: centralized error handling (src/errors/, src/http/error-handler.js) poori app ke through.
+// Har error source (throw, rejected Promise, next(err), service/DB error, unknown route, parse error) ek jaisa
+// safe response de aur logs mein sahi level par aaye. Teaching routes: src/examples/error-examples.routes.js.
+
 import http from 'node:http';
 import express from 'express';
 import request from 'supertest';
@@ -9,6 +13,7 @@ import { requestId } from '../../src/middleware/request-id.js';
 import { createRequestLogger } from '../../src/middleware/request-logger.js';
 import { createLogCapture } from '../helpers/log-capture.js';
 
+// Error demo routes ka prefix.
 const ERR = '/api/v1/examples/errors';
 
 function makeApp(env = 'test') {
@@ -17,8 +22,10 @@ function makeApp(env = 'test') {
   return { app: createApp({ config, logger: capture.logger }), ...capture };
 }
 
+// Request ki 'request completed' line dhundta hai (findLast = list ko peeche se dekhta hai).
 const lastRequestLog = (entries) => entries().findLast((e) => e.msg === 'request completed');
 
+// Expected errors (validation, 401, 403, 404, 409, 429): apna status, stable code, koi stack/internal detail nahi.
 describe('operational errors -> their own status and safe body', () => {
   test.each([
     ['validation', 400, 'VALIDATION_ERROR'],
@@ -67,6 +74,7 @@ describe('operational errors -> their own status and safe body', () => {
   });
 });
 
+// Bug/infra failures: client ko hamesha generic 500; asli message + stack sirf server logs mein.
 describe('unexpected errors -> generic 500, details stay in the logs', () => {
   test.each([
     ['sync throw', 'sync-throw'],
@@ -100,6 +108,7 @@ describe('unexpected errors -> generic 500, details stay in the logs', () => {
   });
 });
 
+// Async service ka domain error apna status rakhta hai; DB driver ka error (host/port wala) client ko leak nahi hota.
 describe('errors from async services and database adapters', () => {
   test('service domain errors keep their status (409, 404) and success still works', async () => {
     const { app } = makeApp();
@@ -120,6 +129,7 @@ describe('errors from async services and database adapters', () => {
   });
 });
 
+// 404, malformed JSON, bada body, ZodError: sab ek hi error handler se nikalte hain.
 describe('404 and framework errors use the same pipeline', () => {
   test('unknown route -> NotFoundError via the final 404 handler', async () => {
     const { app, entries } = makeApp();
@@ -153,8 +163,11 @@ describe('404 and framework errors use the same pipeline', () => {
   });
 });
 
+// Handler mein NODE_ENV ka branch nahi hai: production aur development ke bodies same (safety config par depend nahi karti).
 describe('safe responses do not depend on NODE_ENV', () => {
   // Handler ke andar koi env branch nahi hai: production aur development ke bodies same hote hain.
+  // Chhota alag Express app jisme asli errorHandler lagaya hai, taaki production-mode me 500 bhi test kar sakein
+  // (full app mein teaching routes production mein mounted hi nahi hote).
   function hostApp(env) {
     const capture = createLogCapture();
     const app = express();
@@ -197,6 +210,8 @@ describe('safe responses do not depend on NODE_ENV', () => {
   });
 });
 
+// Response ke headers jaane ke baad error: JSON error nahi bhej sakte; connection band hota hai aur client ko
+// truncated response milta hai. Isliye yahan asli server (app.listen(0)) aur raw `http.get` use hota hai.
 describe('error after the response has started', () => {
   test('client sees a truncated response (connection closed), error is logged with headersSent', async () => {
     const { app, entries } = makeApp();

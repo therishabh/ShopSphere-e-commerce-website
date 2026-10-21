@@ -1,13 +1,19 @@
+// Integration tests: /api/v1 routing, body parsing, status codes, nested routers, redirect, mount order.
+// Zyada tar `/api/v1/examples/*` (teaching endpoints) par chalte hain, kyunki feature modules abhi khaali hain.
+
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config/env.js';
 
+// Har 404 ka expected body (fixed message, path echo nahi).
 const NOT_FOUND = { error: { code: 'NOT_FOUND', message: 'Resource not found' } };
 const EX = '/api/v1/examples';
 
+// Har test ke liye fresh app (fresh in-memory data). LOG_LEVEL=silent taaki test output saaf rahe.
 const makeApp = (env = 'test') =>
   createApp({ config: loadConfig({ NODE_ENV: env, LOG_LEVEL: 'silent' }) });
 
+// Koi bhi unmatched route (GET/POST, /api, /api/v2...) ek hi safe JSON 404 deta hai.
 describe('404 and unknown routes', () => {
   const app = makeApp();
 
@@ -37,6 +43,7 @@ describe('404 and unknown routes', () => {
   });
 });
 
+// 7 feature modules mounted hain par khaali: unke paths 404 dene chahiye (koi fake endpoint nahi).
 describe('module routers are mounted but expose no endpoints yet', () => {
   const app = makeApp();
 
@@ -52,6 +59,7 @@ describe('module routers are mounted but expose no endpoints yet', () => {
   );
 });
 
+// Teaching endpoints production mein expose nahi hone chahiye.
 describe('examples are not mounted in production', () => {
   test('GET examples -> 404 when NODE_ENV=production', async () => {
     const res = await request(makeApp('production')).get(`${EX}/ping`);
@@ -80,6 +88,7 @@ describe('res.send / params / query', () => {
   });
 });
 
+// JSON/form parsing aur uski failures: malformed JSON 400, galat content-type 415, bada body 413.
 describe('body parsing', () => {
   const app = makeApp();
 
@@ -126,6 +135,7 @@ describe('body parsing', () => {
   });
 });
 
+// Notes demo ke zariye REST status codes: 201+Location, 200, 204, 400, 404, 405, OPTIONS/HEAD, route ordering.
 describe('REST status codes on the notes example', () => {
   let app;
   beforeEach(() => {
@@ -234,6 +244,7 @@ describe('REST status codes on the notes example', () => {
   });
 });
 
+// Nested router: parent ka :noteId child router mein mergeParams se milta hai.
 describe('nested router: /notes/:noteId/comments', () => {
   let app;
   beforeEach(async () => {
@@ -275,6 +286,7 @@ describe('res.redirect', () => {
   });
 });
 
+// Deliberate mount order ka proof: health parsers se pehle hai, parsers sirf /api/v1 par.
 describe('mount order', () => {
   const app = makeApp();
 

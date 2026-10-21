@@ -28,6 +28,14 @@ ShopSphere is a production-style multi-vendor e-commerce backend (customers, sel
 - Never log passwords, tokens, cookies, reset links or sensitive bodies.
 - No feature TODOs, stubs, fake success responses, empty handlers, or untested placeholder implementations. Empty route modules are allowed only if valid and wired.
 
+## Code comments
+
+- **Every file under `src/`** carries detailed **Hinglish** comments so a fresher can understand it. Model files: `src/config/env.js`, `src/server.js`, `src/app.js`.
+- **Tests do not get new comments** (owner's decision). The comments already present in existing test files and JS config files stay as they are; do not remove them, and do not add new ones in new or edited tests/config files (test names should be descriptive instead).
+- Start each file with a short comment on its purpose and where it fits. Explain the _why_ behind design and ordering, and explain library behaviour a newcomer may not know (e.g. what a Zod method does, why an error middleware has 4 arguments). Skip pure trivia.
+- Keep code identifiers, commands and error text in English; comments in Hinglish. Apply this to every new or edited file under `src/` in every future phase.
+- Comments must never change behaviour. When adding comments to existing code, verify the code is unchanged (e.g. compare ASTs with and without comments), then run lint, format and tests.
+
 ## Testing and verification
 
 - Add or update automated tests for every meaningful behaviour and every error path.

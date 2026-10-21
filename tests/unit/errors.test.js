@@ -1,3 +1,6 @@
+// Unit tests: error hierarchy (src/errors/), thrown value ki classification (toAppError), aur error handler
+// (src/http/error-handler.js) fake req/res ke saath. Server ya network ki zarurat nahi.
+
 import { jest } from '@jest/globals';
 import { z } from 'zod';
 import {
@@ -18,6 +21,7 @@ import { toAppError } from '../../src/errors/to-app-error.js';
 import { createErrorHandler } from '../../src/http/error-handler.js';
 import { createLogCapture } from '../helpers/log-capture.js';
 
+// Har error class ka fixed HTTP status, stable code aur 'operational' flag.
 describe('error hierarchy', () => {
   test.each([
     [ValidationError, 400, 'VALIDATION_ERROR'],
@@ -75,6 +79,7 @@ describe('error hierarchy', () => {
   });
 });
 
+// Koi bhi thrown value (AppError, ZodError, library error, string, null...) kis AppError mein badalti hai.
 describe('toAppError (classification)', () => {
   test('AppError passes through unchanged', () => {
     const err = new ConflictError();
@@ -126,7 +131,11 @@ describe('toAppError (classification)', () => {
   });
 });
 
+// Handler ko seedha call karte hain; `res` ek fake object hai jiske methods jest.fn() spies hain, isliye hum dekh
+// sakte hain ki handler ne kya call kiya (status, json, set) aur kya nahi.
 describe('errorHandler (unit, fake req/res)', () => {
+  // Har test ke liye fresh logger capture, fake res aur handler. `status` ko `function` (arrow nahi) rakha
+  // taaki `this` use karke chaining (`res.status(...).json(...)`) kaam kare.
   function setup({ headersSent = false } = {}) {
     const capture = createLogCapture('debug');
     const res = {
@@ -183,6 +192,7 @@ describe('errorHandler (unit, fake req/res)', () => {
     expect(entry).toMatchObject({ level: 20, msg: 'operational error cause' });
   });
 
+  // `throw 'secret'` jaisi value ka content logs mein nahi jaana chahiye, sirf type.
   test('non-Error thrown values are logged by type only, never by content', () => {
     const { capture, res, next, handler } = setup();
     handler('secret-token-abc', {}, res, next);
@@ -191,6 +201,8 @@ describe('errorHandler (unit, fake req/res)', () => {
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
+  // res.headersSent=true: response shuru ho chuka. Handler ko kuch likhna nahi chahiye, sirf next(err) se Express ke
+  // default handler ko dena chahiye (wo connection band karta hai).
   test('response already started: delegates to next(err), writes nothing', () => {
     const { capture, res, next, handler } = setup({ headersSent: true });
     const err = new Error('late failure');

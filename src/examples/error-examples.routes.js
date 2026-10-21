@@ -1,3 +1,9 @@
+// Error handling ka teaching/demo router (`/api/v1/examples/errors/...`). Real feature nahi hai.
+// Har route alag tareeke se fail hota hai (expected AppError, sync throw, rejected Promise, next(err), DB driver
+// error, response shuru hone ke baad error) aur central error handler (src/http/error-handler.js) har ek ko
+// ek jaise safe response mein badalta hai. Production mein mount nahi hota.
+// Saath mein tests/integration/error-handling.test.js padho.
+
 import { Router } from 'express';
 import {
   AuthenticationError,

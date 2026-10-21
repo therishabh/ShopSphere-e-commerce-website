@@ -1,5 +1,9 @@
+// Unit tests: src/config/env.js ka loadConfig(). Process ke asli environment par depend nahi karte;
+// har test apna chhota env object pass karta hai (isiliye loadConfig argument leta hai).
+
 import { loadConfig, ConfigError } from '../../src/config/env.js';
 
+// describe = tests ka group. Har `test(...)` ek behaviour check karta hai.
 describe('loadConfig', () => {
   test('applies defaults for an empty environment', () => {
     expect(loadConfig({})).toEqual({
@@ -24,6 +28,7 @@ describe('loadConfig', () => {
     expect(Object.isFrozen(loadConfig({}))).toBe(true);
   });
 
+  // test.each = ek hi test kai inputs par chalao (har row ek alag test). `%j` = row ko JSON mein dikhana.
   test.each([
     [{ NODE_ENV: 'staging' }, 'NODE_ENV'],
     [{ PORT: 'abc' }, 'PORT'],
@@ -40,6 +45,7 @@ describe('loadConfig', () => {
     }
   });
 
+  // Saari galtiyan ek saath dikhni chahiye (user ko ek-ek karke fix na karna pade).
   test('reports every invalid field at once', () => {
     try {
       loadConfig({ NODE_ENV: 'x', PORT: 'y' });

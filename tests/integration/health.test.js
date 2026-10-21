@@ -1,3 +1,6 @@
+// Integration tests: createApp() aur /health endpoints, Supertest ke saath.
+// Supertest app ko bina port kholein seedha request bhej deta hai, isliye tests tez aur isolated hote hain.
+
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { createReadiness } from '../../src/health/readiness.js';
@@ -5,6 +8,7 @@ import { loadConfig } from '../../src/config/env.js';
 
 const config = loadConfig({ NODE_ENV: 'test' });
 
+// App bina port ke ban jaana chahiye (server.js se alag hone ka fayda).
 describe('createApp', () => {
   test('builds an app without opening a port', () => {
     const app = createApp({ config });
@@ -18,6 +22,7 @@ describe('createApp', () => {
   });
 });
 
+// Liveness dependency down hone par bhi 200 deta hai (restart ka decision, traffic ka nahi).
 describe('GET /health/live', () => {
   test('returns 200 even when a dependency is down', async () => {
     const readiness = createReadiness({
@@ -29,6 +34,7 @@ describe('GET /health/live', () => {
   });
 });
 
+// Readiness dependencies par depend karti hai: 200 ya 503.
 describe('GET /health/ready', () => {
   test('returns 200 when all dependencies are up', async () => {
     const readiness = createReadiness({ checks: { db: async () => {} } });

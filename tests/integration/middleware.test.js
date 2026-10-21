@@ -1,9 +1,15 @@
+// Integration tests: middleware pipeline (request ID, security headers, request logging) aur teaching examples.
+// `makeApp()` ek real Pino logger ko memory mein capture karta hai (tests/helpers/log-capture.js), isliye hum
+// asli log lines par assertions likh sakte hain, e.g. 'password kabhi log mein nahi aaya'.
+
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config/env.js';
 import { createLogCapture } from '../helpers/log-capture.js';
 
+// Middleware demo routes ka prefix.
 const MW = '/api/v1/examples/middleware';
+// UUID v4 ka pattern; generated request ID isse match honi chahiye.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function makeApp(env = 'test') {
@@ -12,6 +18,7 @@ function makeApp(env = 'test') {
   return { app: createApp({ config, logger: capture.logger }), config, ...capture };
 }
 
+// Request ID: generate, reuse (valid), replace (unsafe), har response par, aur concurrent requests mein unique.
 describe('request ID', () => {
   test('generates a UUID, returns it in X-Request-Id', async () => {
     const { app } = makeApp();
@@ -62,6 +69,7 @@ describe('request ID', () => {
   });
 });
 
+// Helmet headers har tarah ke response par (health, static, API, 404, parse error).
 describe('security headers', () => {
   test.each([
     ['health', '/health/live'],
@@ -88,6 +96,7 @@ describe('security headers', () => {
   });
 });
 
+// Ek request = ek structured log line; level status se; sensitive data kabhi nahi.
 describe('request logging', () => {
   test('one structured entry per request, correlated with the response header', async () => {
     const { app, entries } = makeApp();
@@ -157,6 +166,7 @@ describe('request logging', () => {
   });
 });
 
+// Chaining, conditional, pipeline rokna, next(err), req.app. Counters (/stats) prove karte hain ki kya chala.
 describe('teaching examples: middleware mechanics', () => {
   test('chaining: router-level -> route-level a -> b -> handler, in order', async () => {
     const { app } = makeApp();
@@ -183,6 +193,7 @@ describe('teaching examples: middleware mechanics', () => {
     ]);
   });
 
+  // 403 wali requests ke baad handler counter 0 rehta hai; sahi role par sirf tab 1 hota hai.
   test('a rejected request never reaches the controller', async () => {
     const { app } = makeApp();
     const stats = async () => (await request(app).get(`${MW}/stats`)).body.calls;
