@@ -32,8 +32,8 @@ Repeated keys (`?page=1&page=2`) become arrays in Express 5 and fail string sche
 ## DTO / schema strategy
 
 - Schemas live next to the module (`src/modules/<name>/<name>.schemas.js`): query, params, body and response DTOs. DTOs are not the database model: a column rename must not change the API.
-- Money is an integer in minor units (`priceCents`), never a float. Dates are ISO-8601 UTC strings. IDs in URLs are UUIDs. Field names are camelCase.
-- `src/modules/products/products.schemas.js` is the representative set (list query, id params, create body, response DTOs). Phase 9 wires it to real endpoints; today only the validation examples use it.
+- Money is an integer in minor units (`priceCents`), never a float. Dates are ISO-8601 UTC strings. IDs in URLs are 24-hex MongoDB ObjectIds. Field names are camelCase.
+- `src/modules/products/products.schemas.js` is the representative set (list query, id params, create body, response DTOs). Phase 9 wired it to the real catalog endpoints (public list, seller list, stock adjust) as well as the validation examples; see [catalog-and-inventory.md](catalog-and-inventory.md).
 
 ## Pagination, sorting, filtering, search
 
@@ -101,5 +101,5 @@ curl $B/not-a-uuid                                                # 400, source 
 
 ## Tradeoffs
 
-- The demo list uses in-memory data; its normalized query is exactly what Phase 9 passes to the Mongoose repository.
+- The demo list uses in-memory data; its normalized query is exactly what the real `GET /api/v1/products` passes to the Mongoose repository (Phase 9). The real list has its own sort allowlist (`rating` added) and the `_id` tie-breaker follows the sort direction.
 - No generated API documentation on `main` yet: request/response shapes are documented here and in the schemas. The OpenAPI/Swagger layer exists on `feature/openapi-swagger`.

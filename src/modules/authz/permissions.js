@@ -18,6 +18,15 @@ export const PERMISSIONS = Object.freeze({
   PRODUCT_UPDATE_OWN: 'product:update:own',
   PRODUCT_SUBMIT_OWN: 'product:submit:own',
   INVENTORY_UPDATE_OWN: 'inventory:update:own',
+  // Phase 9
+  PRODUCT_READ_OWN: 'product:read:own',
+  PRODUCT_ARCHIVE_OWN: 'product:archive:own',
+  REVIEW_CREATE: 'review:create',
+  REVIEW_UPDATE_OWN: 'review:update:own',
+  REVIEW_DELETE_OWN: 'review:delete:own',
+  WISHLIST_MANAGE_OWN: 'wishlist:manage:own',
+  ADMIN_CATEGORY_MANAGE: 'admin:category:manage',
+  ADMIN_REVIEW_MODERATE: 'admin:review:moderate',
   ADMIN_SELLER_REVIEW: 'admin:seller:review',
   ADMIN_PRODUCT_MODERATE: 'admin:product:moderate',
   ADMIN_AUDIT_READ: 'admin:audit:read',
@@ -27,18 +36,34 @@ export const PERMISSIONS = Object.freeze({
 // CUSTOMER seller banne ke liye apply kar sakta hai; approval ke baad role SELLER ho jaata hai (apply wali permission chali jaati hai).
 // ADMIN ke paas customer/seller ki permissions nahi: admin kaam alag hain, aur "admin seller ke product badal sake" galti se na ho.
 const ROLE_PERMISSIONS = Object.freeze({
-  CUSTOMER: [PERMISSIONS.SELLER_APPLY, PERMISSIONS.SELLER_READ_OWN],
+  CUSTOMER: [
+    PERMISSIONS.SELLER_APPLY,
+    PERMISSIONS.SELLER_READ_OWN,
+    PERMISSIONS.REVIEW_CREATE,
+    PERMISSIONS.REVIEW_UPDATE_OWN,
+    PERMISSIONS.REVIEW_DELETE_OWN,
+    PERMISSIONS.WISHLIST_MANAGE_OWN,
+  ],
   SELLER: [
     PERMISSIONS.SELLER_READ_OWN,
     PERMISSIONS.PRODUCT_CREATE,
     PERMISSIONS.PRODUCT_UPDATE_OWN,
     PERMISSIONS.PRODUCT_SUBMIT_OWN,
     PERMISSIONS.INVENTORY_UPDATE_OWN,
+    PERMISSIONS.PRODUCT_READ_OWN,
+    PERMISSIONS.PRODUCT_ARCHIVE_OWN,
+    // Seller bhi doosre sellers ke products par review likh aur wishlist bana sakta hai (apne product par nahi: reviews.service).
+    PERMISSIONS.REVIEW_CREATE,
+    PERMISSIONS.REVIEW_UPDATE_OWN,
+    PERMISSIONS.REVIEW_DELETE_OWN,
+    PERMISSIONS.WISHLIST_MANAGE_OWN,
   ],
   ADMIN: [
     PERMISSIONS.ADMIN_SELLER_REVIEW,
     PERMISSIONS.ADMIN_PRODUCT_MODERATE,
     PERMISSIONS.ADMIN_AUDIT_READ,
+    PERMISSIONS.ADMIN_CATEGORY_MANAGE,
+    PERMISSIONS.ADMIN_REVIEW_MODERATE,
   ],
 });
 

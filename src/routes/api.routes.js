@@ -11,6 +11,9 @@ import { createProductsRouter } from '../modules/products/products.routes.js';
 import { createCartRouter } from '../modules/cart/cart.routes.js';
 import { createOrdersRouter } from '../modules/orders/orders.routes.js';
 import { createAdminRouter } from '../modules/admin/admin.routes.js';
+import { createCategoriesRouter } from '../modules/categories/categories.routes.js';
+import { createReviewsRouter } from '../modules/reviews/reviews.routes.js';
+import { createWishlistRouter } from '../modules/wishlist/wishlist.routes.js';
 // Authorization (role/permission/ownership), browser sessions (Redis) aur seller/admin/products ke asli modules (Phase 8).
 import { createAuthz } from '../modules/authz/index.js';
 import { createAuthenticateEither } from '../modules/authz/authenticate-either.js';
@@ -22,6 +25,12 @@ import { createAdminService } from '../modules/admin/admin.service.js';
 import { createAdminController } from '../modules/admin/admin.controller.js';
 import { createProductService } from '../modules/products/products.service.js';
 import { createProductsController } from '../modules/products/products.controller.js';
+import { createCategoryService } from '../modules/categories/categories.service.js';
+import { createCategoriesController } from '../modules/categories/categories.controller.js';
+import { createReviewService } from '../modules/reviews/reviews.service.js';
+import { createReviewsController } from '../modules/reviews/reviews.controller.js';
+import { createWishlistService } from '../modules/wishlist/wishlist.service.js';
+import { createWishlistController } from '../modules/wishlist/wishlist.controller.js';
 // Teaching examples: sirf seekhne/demo ke liye, production mein mount nahi hote.
 import { createHttpExamplesRouter } from '../examples/http-examples.routes.js';
 import { createMiddlewareExamplesRouter } from '../examples/middleware-examples.routes.js';
@@ -107,6 +116,24 @@ export function createApiRouter({ config, database, redis, logger }) {
         ...deps,
         controller: createAdminController({ adminService: createAdminService({ database }) }),
       }),
+      // Phase 9: public categories, reviews (do prefixes: /products/:id/reviews aur /reviews/:id) aur wishlist.
+      categories: createCategoriesRouter({
+        controller: createCategoriesController({
+          categoryService: createCategoryService({ database }),
+        }),
+      }),
+      reviews: createReviewsRouter({
+        ...deps,
+        controller: createReviewsController({
+          reviewService: createReviewService({ database, logger }),
+        }),
+      }),
+      wishlist: createWishlistRouter({
+        ...deps,
+        controller: createWishlistController({
+          wishlistService: createWishlistService({ database }),
+        }),
+      }),
     };
   }
 
@@ -115,6 +142,10 @@ export function createApiRouter({ config, database, redis, logger }) {
   api.use('/users', createUsersRouter());
   api.use('/sellers', routes.sellers ?? createSellersRouter());
   api.use('/products', routes.products ?? createProductsRouter());
+  api.use('/categories', routes.categories ?? createCategoriesRouter());
+  api.use('/wishlist', routes.wishlist ?? createWishlistRouter());
+  // Reviews ke paths do alag prefixes par hain (/products/:id/reviews, /reviews/:id), isliye root par mount; poore paths router mein.
+  api.use(routes.reviews ?? createReviewsRouter());
   api.use('/cart', createCartRouter());
   api.use('/orders', createOrdersRouter());
   api.use('/admin', routes.admin ?? createAdminRouter());

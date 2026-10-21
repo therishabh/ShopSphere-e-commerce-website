@@ -41,6 +41,21 @@ export function createAdminController({ adminService }) {
       };
     },
 
+    async createCategory(_req, res) {
+      const category = await adminService.createCategory({
+        actor: res.locals.actor,
+        input: res.locals.valid.body,
+      });
+      res.status(201).location(`/api/v1/categories`).json(category);
+    },
+    async removeReview(_req, res) {
+      await adminService.removeReview({
+        actor: res.locals.actor,
+        reviewId: res.locals.valid.params.reviewId,
+        reason: res.locals.valid.body.reason,
+      });
+      res.status(204).end();
+    },
     async listAuditEvents(_req, res) {
       res.json(await adminService.listAuditEvents({ query: res.locals.valid.query }));
     },

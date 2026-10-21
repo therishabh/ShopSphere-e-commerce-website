@@ -20,6 +20,16 @@ export const COLLECTION_VALIDATORS = Object.freeze({
       { 'stock.reserved': { $gte: 0 } },
       // Reserved kabhi onHand se zyada nahi: oversell database level par band.
       { $expr: { $lte: ['$stock.reserved', '$stock.onHand'] } },
+      // Rating summary kabhi galat nahi: count >= 0 aur har review 1..5 hai to count <= sum <= 5 * count (Phase 9).
+      { ratingCount: { $gte: 0 } },
+      {
+        $expr: {
+          $and: [
+            { $gte: ['$ratingSum', '$ratingCount'] },
+            { $lte: ['$ratingSum', { $multiply: ['$ratingCount', 5] }] },
+          ],
+        },
+      },
     ],
   },
   reviews: { rating: { $gte: 1, $lte: 5 } },

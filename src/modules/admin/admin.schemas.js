@@ -2,13 +2,18 @@
 
 import { z } from 'zod';
 import { buildListQuerySchema } from '../../http/query/list-query.js';
-import { objectId } from '../../http/query/fields.js';
+import { objectId, slug } from '../../http/query/fields.js';
 import { PRODUCT_STATUSES, SELLER_STATUSES } from '../../db/models/enums.js';
 
 export const sellerIdParams = z.strictObject({ sellerId: objectId() });
 export const productIdParams = z.strictObject({ productId: objectId() });
 
 // reject/suspend ke liye kaaran zaruri: audit trail mein jaata hai aur (product ke case mein) seller ko dikhta hai.
+export const reviewIdParams = z.strictObject({ reviewId: objectId() });
+export const createCategoryBody = z.strictObject({
+  name: z.string().trim().min(1).max(100),
+  slug: slug().min(2),
+});
 export const reasonBody = z.strictObject({ reason: z.string().trim().min(3).max(500) });
 // approve/reinstate par kaaran optional.
 export const optionalNoteBody = z.strictObject({

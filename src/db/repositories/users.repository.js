@@ -21,6 +21,13 @@ export function createUserRepository({ User }) {
       return serialize(await User.findById(id).lean());
     },
 
+    /** Reviews ke saath reviewer ka sirf naam dikhana hai (email nahi): ek query mein kai users. @returns Map(id -> name) */
+    async findNamesByIds(ids) {
+      const rows = await User.find({ _id: { $in: ids } })
+        .select('name')
+        .lean();
+      return new Map(rows.map((r) => [String(r._id), r.name]));
+    },
     async findByEmail(email) {
       return serialize(await User.findOne({ email: normalizeEmail(email) }).lean());
     },

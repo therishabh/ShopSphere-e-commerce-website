@@ -24,6 +24,13 @@ export function createSellerProfileRepository({ SellerProfile }) {
       return serialize(await SellerProfile.findById(id).lean());
     },
 
+    /** Public store info (naam/slug) products ke saath dikhane ke liye: ek query mein kai sellers. userId/status bahar nahi jaate. */
+    async findPublicByIds(ids) {
+      const rows = await SellerProfile.find({ _id: { $in: ids } })
+        .select('storeName slug')
+        .lean();
+      return new Map(rows.map((r) => [String(r._id), { storeName: r.storeName, slug: r.slug }]));
+    },
     async findByUserId(userId) {
       return serialize(await SellerProfile.findOne({ userId }).lean());
     },

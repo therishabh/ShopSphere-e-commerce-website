@@ -78,17 +78,15 @@ Stock reservation needs no transaction: `updateOne({ _id, $expr: available >= n 
 
 ## Indexes (query patterns)
 
-| Index                                                                                           | Serves                                                   |
-| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `products {status, createdAt:-1}`                                                               | public list, newest first                                |
-| `products {status, categorySlug, createdAt:-1}`                                                 | public list filtered by category                         |
-| `products {status, priceCents}`                                                                 | price sort / range                                       |
-| `products {sellerId, status}` and unique `{sellerId, sku}`                                      | seller's own catalog, SKU uniqueness                     |
-| `orders {userId, createdAt:-1}`, `{status, createdAt:-1}`, `{'items.sellerId':1, createdAt:-1}` | order history, admin views, seller order view (multikey) |
-| `outbox_events {availableAt}` partial on status in (PENDING, FAILED)                            | worker polling; SENT events are not indexed              |
-| TTL on `refresh_tokens.expiresAt`, `one_time_tokens.expiresAt`, `idempotency_records.expiresAt` | automatic cleanup                                        |
+| Index                                                                                                           | Serves                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `products {status, createdAt:-1, _id:-1}` and the other catalog indexes (category, price, name, rating, seller) | public list, filters and sorts; every index ends with `_id` (sort tie-breaker). Full table and `explain()` evidence: [catalog-and-inventory.md](catalog-and-inventory.md) |
+| unique `products {sellerId, sku}`, `{sellerId, status, createdAt:-1, _id:-1}`                                   | SKU uniqueness, seller's own catalog                                                                                                                                      |
+| `orders {userId, createdAt:-1}`, `{status, createdAt:-1}`, `{'items.sellerId':1, createdAt:-1}`                 | order history, admin views, seller order view (multikey)                                                                                                                  |
+| `outbox_events {availableAt}` partial on status in (PENDING, FAILED)                                            | worker polling; SENT events are not indexed                                                                                                                               |
+| TTL on `refresh_tokens.expiresAt`, `one_time_tokens.expiresAt`, `idempotency_records.expiresAt`                 | automatic cleanup                                                                                                                                                         |
 
-Trade-off: every index costs write time and memory. Name search is an unindexed regex; Phase 13 adds a text index or Atlas Search. Mongoose `autoIndex` and `autoCreate` are **off**: indexes and collections are created by migrations, so an app restart never triggers a long index build on a big collection.
+Phase 9 reworked the products indexes (migration 0002); reviews and wishlist_items got `_id`-terminated list indexes. Trade-off: every index costs write time and memory. Name search is an unindexed regex; Phase 13 adds a text index or Atlas Search. Mongoose `autoIndex` and `autoCreate` are **off**: indexes and collections are created by migrations, so an app restart never triggers a long index build on a big collection.
 
 ## Migrations
 
@@ -153,6 +151,6 @@ When tests are written: use the same replica-set container with a separate datab
 
 - Referential integrity to other collections is application-level. A bug can leave a dangling `productId`; deletes are therefore restricted by convention (soft-delete/archive).
 - Replica set is required even locally; a plain `mongod` cannot run transactions.
-- `syncIndexes()` in migration 0001 drops indexes that are not in the schemas; later migrations should create or drop specific indexes explicitly.
+- Phase 9 added rating summary fields (`ratingCount`, `ratingSum`, `ratingAverage`), status `ON_HOLD`, and migration 0002 (backfill, recompute from reviews, stricter products validator, `syncIndexes` for products/reviews/wishlist_items). `syncIndexes()` in migration 0001 drops indexes that are not in the schemas; later migrations should create or drop specific indexes explicitly.
 - The shared `ConflictError` for validator failures maps a database-rule violation to `409`; it usually indicates a race, but a programming bug that bypasses service validation looks the same.
 - The auth-less local container is for development only.

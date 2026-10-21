@@ -1,4 +1,4 @@
-// Products controller (sirf HTTP).
+// Products controller (sirf HTTP): request se validated data nikaalo, service ko do, response banao. Business rule yahan nahi.
 
 export function createProductsController({ productService }) {
   return {
@@ -35,6 +35,41 @@ export function createProductsController({ productService }) {
     async submit(_req, res) {
       const { productId } = res.locals.valid.params;
       res.json(await productService.submit({ actor: res.locals.actor, productId }));
+    },
+    async archive(_req, res) {
+      const { productId } = res.locals.valid.params;
+      await productService.archive({ actor: res.locals.actor, productId });
+      res.status(204).end();
+    },
+    async adjustStock(_req, res) {
+      const { productId } = res.locals.valid.params;
+      res.json(
+        await productService.adjustStock({
+          actor: res.locals.actor,
+          productId,
+          delta: res.locals.valid.body.delta,
+        }),
+      );
+    },
+    // Public reads (login nahi): res.locals.actor yahan set nahi hota.
+    async listPublic(_req, res) {
+      res.json(await productService.listPublic({ query: res.locals.valid.query }));
+    },
+    async getPublic(_req, res) {
+      res.json(await productService.getPublic({ productId: res.locals.valid.params.productId }));
+    },
+    async listMine(_req, res) {
+      res.json(
+        await productService.listMine({ actor: res.locals.actor, query: res.locals.valid.query }),
+      );
+    },
+    async getMine(_req, res) {
+      res.json(
+        await productService.getMine({
+          actor: res.locals.actor,
+          productId: res.locals.valid.params.productId,
+        }),
+      );
     },
   };
 }

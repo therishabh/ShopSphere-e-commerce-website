@@ -2,13 +2,14 @@
 //
 // DTO strategy: request schemas (query/params/body) aur response schema yahin define hote hain, database model
 // (Mongoose models, src/db/models) se alag. Isse API contract database ke badlav se bandha nahi rehta: field rename ho to
-// bhi API same rehti hai, bas mapping badalti hai. Abhi inka use sirf validation demo (src/examples/) mein hai;
-// asli products endpoints Phase 9 mein inhi schemas se bante hain.
+// bhi API same rehti hai, bas mapping badalti hai. Inka use validation demo (src/examples/) aur Phase 9 ke real products
+// endpoints dono mein hai.
 
 import { z } from 'zod';
 import { buildListQuerySchema } from '../../http/query/list-query.js';
 import { booleanString, intString, objectId, slug } from '../../http/query/fields.js';
 import { listResponseSchema } from '../../http/schemas.js';
+import { PRODUCT_STATUSES } from '../../db/models/enums.js';
 
 // Money hamesha integer "minor units" (paise/cents) mein: 49900 = 499.00 INR. Float se paisa kabhi nahi
 // (0.1 + 0.2 != 0.3 jaisi rounding galtiyan hoti hain).
@@ -22,39 +23,69 @@ export const PRODUCT_SORTABLE = {
   name: 'name',
 };
 
-// GET /products ka query: page, limit, sort, q (search) aur filters (category, minPrice, maxPrice, inStock).
+// Catalog ke filters (demo list aur real public list dono yahi use karte hain). Har filter ek strict schema hai: unknown filter
+// (jaise ?sellerId= ya ?status=) 400 deta hai, isliye client public query ko badal nahi sakta.
+const CATALOG_FILTERS = {
+  category: slug(),
+  minPrice: intString({
+    min: 0,
+    max: MAX_PRICE_CENTS,
+    description: 'Minimum price in minor units (e.g. paise)',
+  }),
+  maxPrice: intString({
+    min: 0,
+    max: MAX_PRICE_CENTS,
+    description: 'Maximum price in minor units (e.g. paise)',
+  }),
+  inStock: booleanString(),
+};
+
+// Do filters ke beech ka rule: minPrice <= maxPrice (field-level schema ye nahi dekh sakta).
+function checkPriceRange(value, ctx) {
+  if (
+    value.minPrice !== undefined &&
+    value.maxPrice !== undefined &&
+    value.minPrice > value.maxPrice
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['minPrice'],
+      message: 'minPrice must not exceed maxPrice',
+    });
+  }
+}
+
+// Validation demo router ka query: page, limit, sort, q (search) aur filters (category, minPrice, maxPrice, inStock).
 export const productListQuerySchema = buildListQuerySchema({
   sortable: PRODUCT_SORTABLE,
   defaultSort: '-createdAt',
   search: true,
-  filters: {
-    category: slug(),
-    minPrice: intString({
-      min: 0,
-      max: MAX_PRICE_CENTS,
-      description: 'Minimum price in minor units (e.g. paise)',
-    }),
-    maxPrice: intString({
-      min: 0,
-      max: MAX_PRICE_CENTS,
-      description: 'Maximum price in minor units (e.g. paise)',
-    }),
-    inStock: booleanString(),
-  },
-  // Do filters ke beech ka rule: minPrice <= maxPrice (field-level schema ye nahi dekh sakta).
-  checkFilters: (value, ctx) => {
-    if (
-      value.minPrice !== undefined &&
-      value.maxPrice !== undefined &&
-      value.minPrice > value.maxPrice
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['minPrice'],
-        message: 'minPrice must not exceed maxPrice',
-      });
-    }
-  },
+  filters: CATALOG_FILTERS,
+  checkFilters: checkPriceRange,
+});
+
+// --- Phase 9: real catalog ---------------------------------------------------------------------------------------------------
+// Public list ka sort allowlist: client sirf ye naam bhej sakta hai; value (database field) yahin se aati hai. `rating` naya hai
+// (ratingAverage, product ka denormalized summary). Demo router upar wala PRODUCT_SORTABLE hi use karta hai (uska sample data
+// in-memory hai aur usme rating nahi), isliye alag constant.
+export const PUBLIC_PRODUCT_SORTABLE = { ...PRODUCT_SORTABLE, rating: 'ratingAverage' };
+
+// GET /api/v1/products (public): sirf ACTIVE products; status/seller jaisa koi filter nahi diya, isliye client unhe badal nahi sakta.
+export const publicProductListQuerySchema = buildListQuerySchema({
+  sortable: PUBLIC_PRODUCT_SORTABLE,
+  defaultSort: '-createdAt',
+  search: true,
+  filters: CATALOG_FILTERS,
+  checkFilters: checkPriceRange,
+});
+
+// GET /api/v1/products/mine (seller ki apni list): saare statuses dikhte hain, isliye `status` filter allowed hai.
+export const sellerProductListQuerySchema = buildListQuerySchema({
+  sortable: PRODUCT_SORTABLE,
+  defaultSort: '-createdAt',
+  search: true,
+  filters: { ...CATALOG_FILTERS, status: z.enum(PRODUCT_STATUSES) },
+  checkFilters: checkPriceRange,
 });
 
 // /products/:productId ka param: MongoDB ObjectId (24 hex chars). Format yahin check ho jaata hai, isliye galat id database
@@ -115,4 +146,14 @@ export const updateProductBodySchema = z
 // PUT /products/:productId/stock: physical stock (onHand) ki nayi value.
 export const stockBodySchema = z.strictObject({
   onHand: z.number().int().min(0).max(1_000_000),
+});
+
+// Stock ko relative badalna: +5 (maal aaya) ya -2 (damaged). 0 ka matlab kuch nahi badla, isliye reject.
+export const stockAdjustBodySchema = z.strictObject({
+  delta: z
+    .number()
+    .int()
+    .min(-1_000_000)
+    .max(1_000_000)
+    .refine((v) => v !== 0, { message: 'must not be zero' }),
 });

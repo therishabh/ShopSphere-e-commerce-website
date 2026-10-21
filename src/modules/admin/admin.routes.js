@@ -6,10 +6,12 @@ import { validate } from '../../http/validate.js';
 import { PERMISSIONS } from '../authz/permissions.js';
 import {
   auditListQuery,
+  createCategoryBody,
   optionalNoteBody,
   productIdParams,
   productModerationListQuery,
   reasonBody,
+  reviewIdParams,
   sellerIdParams,
   sellerListQuery,
 } from './admin.schemas.js';
@@ -21,6 +23,8 @@ export function createAdminRouter(deps) {
 
   const sellerReview = [authenticate, requirePermission(PERMISSIONS.ADMIN_SELLER_REVIEW)];
   const productModeration = [authenticate, requirePermission(PERMISSIONS.ADMIN_PRODUCT_MODERATE)];
+  const categoryManage = [authenticate, requirePermission(PERMISSIONS.ADMIN_CATEGORY_MANAGE)];
+  const reviewModeration = [authenticate, requirePermission(PERMISSIONS.ADMIN_REVIEW_MODERATE)];
   const auditRead = [authenticate, requirePermission(PERMISSIONS.ADMIN_AUDIT_READ)];
 
   router.get(
@@ -71,6 +75,19 @@ export function createAdminRouter(deps) {
     ...productModeration,
     validate({ params: productIdParams, body: reasonBody }),
     controller.productDecision('reject'),
+  );
+
+  router.post(
+    '/categories',
+    ...categoryManage,
+    validate({ body: createCategoryBody }),
+    controller.createCategory,
+  );
+  router.post(
+    '/reviews/:reviewId/remove',
+    ...reviewModeration,
+    validate({ params: reviewIdParams, body: reasonBody }),
+    controller.removeReview,
   );
 
   router.get(

@@ -41,7 +41,7 @@ export function createAdminService({ database }) {
      */
     transitionSeller({ actor, sellerId, action, reason }) {
       const rule = SELLER_TRANSITIONS[action];
-      return database.transaction(async ({ sellerProfiles, users, audit }) => {
+      return database.transaction(async ({ sellerProfiles, users, products, audit }) => {
         const extra = action === 'approve' ? { approvedAt: new Date(), approvedBy: actor.id } : {};
         const updated = await sellerProfiles.transition({
           id: sellerId,
@@ -55,12 +55,23 @@ export function createAdminService({ database }) {
           throw new ConflictError(`Seller cannot be ${action}d from status ${existing.status}`);
         }
         if (action === 'approve') await users.setRole(updated.userId, 'SELLER');
+        // Suspend par seller ke ACTIVE products public catalog se hat jaate hain (ON_HOLD) aur reinstate par wapas aate hain.
+        // Isi transaction mein: status aur products ek saath badalte hain, beech ki halat kisi ko nahi dikhti.
+        let productsAffected;
+        if (action === 'suspend') productsAffected = await products.holdActiveBySeller(updated.id);
+        if (action === 'reinstate')
+          productsAffected = await products.releaseHoldBySeller(updated.id);
         await audit.record({
           actorId: actor.id,
           action: rule.event,
           entityType: 'SellerProfile',
           entityId: updated.id,
-          metadata: { from: rule.from, to: rule.to, reason },
+          metadata: {
+            from: rule.from,
+            to: rule.to,
+            reason,
+            ...(productsAffected !== undefined ? { productsAffected } : {}),
+          },
         });
         return updated;
       });
@@ -103,6 +114,44 @@ export function createAdminService({ database }) {
           metadata: { from: 'PENDING_REVIEW', to: rule.to, reason, sellerId: product.sellerId },
         });
         return updated;
+      });
+    },
+
+    /** Naya category (admin only). Naam ya slug duplicate ho to unique index se 409. */
+    createCategory({ actor, input }) {
+      return database.transaction(async ({ categories, audit }) => {
+        const category = await categories.create(input);
+        await audit.record({
+          actorId: actor.id,
+          action: 'category.created',
+          entityType: 'Category',
+          entityId: category.id,
+          metadata: { slug: category.slug },
+        });
+        return category;
+      });
+    },
+
+    /**
+     * Review moderation: admin kisi bhi review ko hata sakta hai (kaaran zaruri, audit mein). Review delete aur product ka rating
+     * summary ek transaction mein, jaise user ke apne delete mein (reviews.service.js).
+     */
+    removeReview({ actor, reviewId, reason }) {
+      return database.transaction(async ({ reviews, products, audit }) => {
+        const removed = await reviews.delete({ id: reviewId });
+        if (!removed) throw new NotFoundError('Review not found');
+        await products.applyRatingChange({
+          id: removed.productId,
+          countDelta: -1,
+          sumDelta: -removed.rating,
+        });
+        await audit.record({
+          actorId: actor.id,
+          action: 'review.removed',
+          entityType: 'Review',
+          entityId: removed.id,
+          metadata: { productId: String(removed.productId), reason },
+        });
       });
     },
 

@@ -14,11 +14,23 @@ const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Available stock = onHand - reserved (computed). `inStock` isi par chalta hai.
 const AVAILABLE = { $subtract: ['$stock.onHand', '$stock.reserved'] };
 
+// Sort spec: allowlisted columns + `_id` tie-breaker. Tie-breaker ki direction aakhri sort key jaisi hai (asc -> _id asc, desc ->
+// _id desc): is se wahi index (key ..., _id) forward aur backward dono directions serve karta hai aur MongoDB in-memory SORT nahi
+// karta (models/catalog.models.js ke index comments dekho).
+function sortSpec(sort) {
+  const entries = sort.map((s) => [s.column, s.direction === 'asc' ? 1 : -1]);
+  return Object.fromEntries([...entries, ['_id', entries.at(-1)[1]]]);
+}
+
 // Normalized filters ko Mongo filter object mein badalta hai.
-function buildFilter({ filters = {}, q }, { publicOnly }) {
+// `sellerId` do to sirf us seller ke products (seller ki apni list); `filters.status` tab hi lagta hai jab publicOnly false ho
+// (public view mein status hamesha ACTIVE rehta hai, client use badal nahi sakta).
+function buildFilter({ filters = {}, q }, { publicOnly, sellerId }) {
   const filter = {};
   // Customers ko sirf approved (ACTIVE) products dikhte hain. Seller/admin views publicOnly=false se.
   if (publicOnly) filter.status = 'ACTIVE';
+  else if (filters.status !== undefined) filter.status = filters.status;
+  if (sellerId !== undefined) filter.sellerId = sellerId;
   if (filters.category !== undefined) filter.categorySlug = filters.category;
   if (filters.minPrice !== undefined || filters.maxPrice !== undefined) {
     filter.priceCents = {
@@ -42,14 +54,14 @@ export function createProductRepository({ Product }) {
      * `_id` ko last sort key banate hain (tie-breaker): bina iske same price/date wali rows pages ke beech kabhi
      * repeat ya miss ho sakti hain.
      */
-    async list(query, { publicOnly = true } = {}) {
-      const filter = buildFilter(query, { publicOnly });
-      const sort = Object.fromEntries([
-        ...query.sort.map((s) => [s.column, s.direction === 'asc' ? 1 : -1]),
-        ['_id', 1],
-      ]);
+    async list(query, { publicOnly = true, sellerId } = {}) {
+      const filter = buildFilter(query, { publicOnly, sellerId });
       const [rows, total] = await Promise.all([
-        Product.find(filter).sort(sort).skip(query.offset).limit(query.limit).lean(),
+        Product.find(filter)
+          .sort(sortSpec(query.sort))
+          .skip(query.offset)
+          .limit(query.limit)
+          .lean(),
         Product.countDocuments(filter),
       ]);
       return { items: rows.map((row) => serialize(row)), total };
@@ -111,6 +123,107 @@ export function createProductRepository({ Product }) {
           { returnDocument: 'after', runValidators: true },
         ).lean(),
       );
+    },
+
+    /**
+     * Stock ko relative badalna (delta +/-), poori tarah ek atomic operation mein: filter aur `$inc` ek hi document par ek saath
+     * lagte hain, to "padho, badlo, likho" wali race (lost update) nahi hoti. Filter ki `$expr` guard hai: naya onHand reserved se
+     * neeche ya 1,000,000 se upar na jaye. Guard fail = null (service 409 deti hai). Archived product par nahi chalta.
+     */
+    async adjustStockByOwner({ id, sellerId, delta }) {
+      const nextOnHand = { $add: ['$stock.onHand', delta] };
+      return serialize(
+        await Product.findOneAndUpdate(
+          {
+            _id: id,
+            sellerId,
+            status: { $ne: 'ARCHIVED' },
+            $expr: {
+              $and: [{ $gte: [nextOnHand, '$stock.reserved'] }, { $lte: [nextOnHand, 1_000_000] }],
+            },
+          },
+          { $inc: { 'stock.onHand': delta } },
+          { returnDocument: 'after', runValidators: true },
+        ).lean(),
+      );
+    },
+
+    /**
+     * Checkout ke liye stock rokna (Phase 10 isse call karega): available = onHand - reserved >= quantity ho tabhi `reserved`
+     * badhta hai. Do customers aakhri unit ek saath maangein to MongoDB ek hi document par updates ko serial karta hai: pehla
+     * jeetta hai, doosre ka filter fail hota hai (null). Oversell isliye nahi hota; validator (reserved <= onHand) doosri deewar hai.
+     * Sirf ACTIVE (public) product reserve hota hai.
+     */
+    async reserve({ id, quantity }) {
+      return serialize(
+        await Product.findOneAndUpdate(
+          {
+            _id: id,
+            status: 'ACTIVE',
+            $expr: { $gte: [{ $subtract: ['$stock.onHand', '$stock.reserved'] }, quantity] },
+          },
+          { $inc: { 'stock.reserved': quantity } },
+          { returnDocument: 'after' },
+        ).lean(),
+      );
+    },
+
+    /** Roka hua stock wapas chhodna (payment fail / cart expire). Reserved se zyada release nahi ho sakta (filter guard). */
+    async release({ id, quantity }) {
+      return serialize(
+        await Product.findOneAndUpdate(
+          { _id: id, 'stock.reserved': { $gte: quantity } },
+          { $inc: { 'stock.reserved': -quantity } },
+          { returnDocument: 'after' },
+        ).lean(),
+      );
+    },
+
+    /**
+     * Review create/update/delete ke baad rating summary badalna. Do steps hain (`$inc`, phir average): isliye caller isse
+     * hamesha transaction ke andar chalata hai, taaki review aur summary saath badlein ya saath rollback hon. `$inc` ek document
+     * par concurrent reviews ko serial karta hai (write conflict par transaction retry).
+     */
+    async applyRatingChange({ id, countDelta, sumDelta }) {
+      const updated = await Product.findOneAndUpdate(
+        { _id: id },
+        { $inc: { ratingCount: countDelta, ratingSum: sumDelta } },
+        { returnDocument: 'after' },
+      ).lean();
+      if (!updated) return null;
+      const average =
+        updated.ratingCount > 0
+          ? Math.round((updated.ratingSum / updated.ratingCount) * 100) / 100
+          : 0;
+      await Product.updateOne({ _id: id }, { $set: { ratingAverage: average } });
+      return { ratingCount: updated.ratingCount, ratingAverage: average };
+    },
+
+    /** Seller suspend: uske ACTIVE products ON_HOLD (public se hat jaate hain). @returns kitne products badle */
+    async holdActiveBySeller(sellerId) {
+      const result = await Product.updateMany(
+        { sellerId, status: 'ACTIVE' },
+        { $set: { status: 'ON_HOLD' } },
+      );
+      return result.modifiedCount;
+    },
+
+    /** Seller reinstate: ON_HOLD products wapas ACTIVE. */
+    async releaseHoldBySeller(sellerId) {
+      const result = await Product.updateMany(
+        { sellerId, status: 'ON_HOLD' },
+        { $set: { status: 'ACTIVE' } },
+      );
+      return result.modifiedCount;
+    },
+
+    /** Public categories page ke liye: har category mein kitne ACTIVE products (index { status, categorySlug, ... } se). */
+    async countActiveByCategory() {
+      const rows = await Product.aggregate([
+        { $match: { status: 'ACTIVE' } },
+        { $group: { _id: '$categorySlug', count: { $sum: 1 } } },
+      ]);
+      return Object.fromEntries(rows.map((r) => [r._id, r.count]));
     },
 
     /** Admin moderation list (status filter, sort, pagination). */

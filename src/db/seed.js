@@ -128,6 +128,12 @@ export async function seedDatabase({ models }, { password } = {}) {
       { productId: p._id, userId: customer._id },
       { productId: p._id, userId: customer._id, rating, body },
     );
+    // Review seed mein seedha Review model se bani hai, isliye product ka rating summary (denormalized cache) bhi yahin set
+    // karte hain. App mein ye kaam review service ke transaction se hota hai. `$set` (inc nahi) = seed dobara chalane par bhi wahi.
+    await Product.updateOne(
+      { _id: p._id },
+      { $set: { ratingCount: 1, ratingSum: rating, ratingAverage: rating } },
+    );
   }
   for (const p of [products[2], products[3]]) {
     await ensure(
