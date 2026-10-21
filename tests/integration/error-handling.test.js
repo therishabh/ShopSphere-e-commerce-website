@@ -18,7 +18,7 @@ const ERR = '/api/v1/examples/errors';
 
 function makeApp(env = 'test') {
   const capture = createLogCapture('debug');
-  const config = loadConfig({ NODE_ENV: env });
+  const config = loadConfig({ NODE_ENV: env, MONGODB_URI: 'mongodb://localhost:27017/test' });
   return { app: createApp({ config, logger: capture.logger }), ...capture };
 }
 

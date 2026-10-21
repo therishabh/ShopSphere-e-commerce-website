@@ -25,7 +25,7 @@ const noteBody = z.strictObject({ text: z.string().trim().min(1).max(200) });
 
 export function createHttpExamplesRouter() {
   // Har router instance ka apna fresh store hai, isliye har app (aur har test) khaali se shuru hota hai.
-  // Ye in-memory demo data hai; real data Phase 6 se PostgreSQL mein jayega.
+  // Ye in-memory demo data hai; real data Phase 6 se MongoDB mein jayega.
   const notes = new Map();
   const comments = new Map(); // noteId -> [{ id, text }]
   let nextNoteId = 1;

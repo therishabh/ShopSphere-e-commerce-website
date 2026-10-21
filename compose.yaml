@@ -1,0 +1,34 @@
+# Local development ke liye sirf MongoDB (baaki services Phase 20 mein aayengi).
+#
+# Replica set kyun: MongoDB ke multi-document transactions (order + stock + outbox ek saath) sirf replica set par
+# chalte hain, standalone server par nahi. Isliye ek single-node replica set ("rs0") chalate hain.
+#
+# Security (local only): auth band hai aur port sirf 127.0.0.1 par expose hota hai. Auth + replica set ke liye keyFile
+# chahiye hoti hai, jo local throwaway database ke liye overkill hai. Production mein authenticated cluster (e.g. Atlas)
+# ka MONGODB_URI environment se do; ye compose file production ke liye nahi hai.
+services:
+  mongo:
+    image: mongo:8
+    container_name: shopsphere-mongo
+    restart: unless-stopped
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '127.0.0.1:27017:27017'
+    volumes:
+      - shopsphere_mongo_data:/data/db
+    healthcheck:
+      # Pehli baar replica set initiate karta hai (rs.status() fail ho to rs.initiate()), baad mein sirf status dekhta hai.
+      # Healthy tab maana jata hai jab ye bina error ke chal jaye.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }) }"
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  shopsphere_mongo_data:

@@ -50,7 +50,7 @@ All of these end at `src/http/error-handler.js`, mounted last in `src/app.js` (a
 
 `details` only when present. No stack, no `cause`, no raw error text, ever. The handler has **no `NODE_ENV` branch**: production and development bodies are identical, so safety does not depend on correct environment configuration. Dev diagnostics come from logs. The request ID is in the `X-Request-Id` header (not the body) so support can look up the matching log.
 
-**`message` contract:** an `AppError` message goes to the client verbatim. Never put internal detail, SQL, paths or raw user input in it; put those in `cause` (logged, never sent).
+**`message` contract:** an `AppError` message goes to the client verbatim. Never put internal detail, query text, paths or raw user input in it; put those in `cause` (logged, never sent).
 
 ## Logging
 

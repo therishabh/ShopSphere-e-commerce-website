@@ -101,5 +101,5 @@ curl $B/not-a-uuid                                                # 400, source 
 
 ## Tradeoffs
 
-- The demo list uses in-memory data; its normalized query is exactly what Phase 9 passes to Prisma.
+- The demo list uses in-memory data; its normalized query is exactly what Phase 9 passes to the Mongoose repository.
 - No generated API documentation on `main` yet: request/response shapes are documented here and in the schemas. The OpenAPI/Swagger layer exists on `feature/openapi-swagger`.

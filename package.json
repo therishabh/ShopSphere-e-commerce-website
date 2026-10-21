@@ -13,12 +13,19 @@
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "db:up": "docker compose up -d mongo",
+    "db:down": "docker compose down",
+    "db:migrate": "node scripts/db.js migrate",
+    "db:status": "node scripts/db.js status",
+    "db:seed": "node scripts/db.js seed",
+    "db:reset": "node scripts/db.js reset"
   },
   "dependencies": {
     "dotenv": "18.0.8",
     "express": "5.3.0",
     "helmet": "8.3.0",
+    "mongoose": "9.11.2",
     "pino": "10.4.0",
     "zod": "4.6.7"
   },

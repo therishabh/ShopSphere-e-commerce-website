@@ -10,7 +10,7 @@ One phase per request, one verification pass, one commit. A phase is done only w
 | 3   | Middleware               | Ordered pipeline, request IDs, logging, `next`/`next(err)`, `res.locals`, `req.app` |
 | 4   | Error handling           | Error hierarchy, central handler, async semantics, `headersSent`                    |
 | 5   | Validation & contracts   | Zod, pagination/sort/filter allowlists, OpenAPI + Swagger UI                        |
-| 6   | Persistence              | Prisma schema, migrations, seed, repositories, transactions, readiness              |
+| 6   | Persistence              | Mongoose models/indexes, migrations, seed, repositories, transactions, readiness    |
 | 7   | Authentication           | Signup/login, hashing, refresh rotation, verify/reset flows                         |
 | 8   | Authorization & sessions | Roles, ownership, audit, cookie sessions, CSRF                                      |
 | 9   | Catalog & inventory      | Products, inventory concurrency, reviews, wishlists                                 |
@@ -26,7 +26,7 @@ One phase per request, one verification pass, one commit. A phase is done only w
 | 19  | Observability            | Pino redaction, metrics, Sentry, tracing, graceful shutdown                         |
 | 20  | Deployment & scaling     | Docker, Compose, Nginx, worker_threads lab, scaling exercise                        |
 | 21  | Express concept lab      | Edge-case labs, `labs/express-v4-compat`                                            |
-| 22  | Mongoose lab             | Isolated MongoDB alternative                                                        |
+| 22  | MongoDB features lab     | Aggregation, TTL/text indexes, explain(), change streams, $jsonSchema (isolated)    |
 | 23  | Docs audit               | README, module docs, ADRs consistency                                               |
 | 24  | Coverage audit           | Matrix verification, gap fixing                                                     |
 | 25  | Release gate             | Final review, checklist, handover                                                   |
@@ -34,7 +34,7 @@ One phase per request, one verification pass, one commit. A phase is done only w
 ## Assumptions
 
 - Node.js current LTS and npm; lockfile is `package-lock.json`.
-- Tests needing PostgreSQL/Redis/MongoDB are labelled environment-dependent; local services come from Docker Compose, which arrives in Phase 20. Until then, earlier phases document how to supply their own instances.
+- Checks needing MongoDB/Redis are labelled environment-dependent. MongoDB needs a replica set for transactions; the local single-node replica set comes from `compose.yaml` (Phase 6), and Phase 20 extends Compose to the whole stack.
 - Mock providers are the only payment/email/OIDC integrations; real ones are out of scope.
 - Phases may reorder tracking of a concept (for example, `trust proxy` appears in Phases 11, 20 and 21) but its matrix row stays unverified until every evidence item exists.
 - The repo was empty at Phase 0, so there was no existing code to preserve.

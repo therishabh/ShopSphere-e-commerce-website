@@ -7,13 +7,13 @@ ShopSphere is a production-style multi-vendor e-commerce backend (customers, sel
 - Work in small phases. Implement only the phase requested. Never skip ahead, and never replace implementation with a plan.
 - Before editing, read the relevant files (and README, architecture overview, matrix at the start of a phase). Preserve working code.
 - If blocked, state the exact blocker. Do not silently skip or stub the work.
-- Check official docs for version-sensitive APIs (Express 5, Prisma, BullMQ, Socket.IO, OIDC libraries). Pin dependencies via the lockfile and explain important choices in docs.
+- Check official docs for version-sensitive APIs (Express 5, Mongoose/MongoDB driver, BullMQ, Socket.IO, OIDC libraries). Pin dependencies via the lockfile and explain important choices in docs.
 
 ## Fixed decisions
 
 - Node.js current LTS, Express 5, modern JavaScript ES modules. No TypeScript.
 - Modular monolith; a separate worker process lives in the same repo. No microservices without a demonstrated reason.
-- PostgreSQL + Prisma for the core. MongoDB/Mongoose only in an isolated lab, never in core modules.
+- **MongoDB + Mongoose is the only core database.** No PostgreSQL, Prisma or SQL anywhere in the project (owner's decision). Transactions need a replica set, so local dev runs a single-node replica set (Docker). Integrity that SQL would enforce with foreign keys/CHECK constraints is enforced with schema validators, unique/partial indexes, atomic conditional updates and transactions, and documented as such.
 - Redis (cache, queues, sessions), BullMQ (jobs), Socket.IO (realtime), S3-compatible storage behind an adapter.
 - Jest + Supertest, Zod, Pino, Helmet, explicit CORS, rate limiting, OpenAPI, Docker, Nginx example.
 - Payments, email and other external services use **mock/test providers** in development and tests. Never use real payment credentials, real card data, or live transactions.

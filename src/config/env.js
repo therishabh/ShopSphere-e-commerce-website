@@ -33,6 +33,19 @@ const schema = z.object({
   // (tests mein 'silent', baaki mein 'info'), aur zod ke default ko doosri field ka pata nahi hota.
   // Isliye default neeche loadConfig() mein parse ke baad decide hota hai.
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).optional(),
+
+  // MongoDB connection string: mongodb://host:27017/dbname?replicaSet=rs0  ya  mongodb+srv://user:password@cluster/dbname
+  // Isme password ho sakta hai, isliye isko kabhi log mat karo aur .env ko git mein mat daalo.
+  // `.optional()`: tests (NODE_ENV=test) mein DB ke bina app chalti hai; production mein neeche required banaya gaya hai.
+  // Regex sirf scheme check karti hai (mongodb:// ya mongodb+srv://), baaki parsing driver karta hai.
+  MONGODB_URI: z
+    .string()
+    .regex(/^mongodb(\+srv)?:\/\//, 'must start with mongodb:// or mongodb+srv://')
+    .optional(),
+
+  // Database connection pool ka maximum size (ek app instance kitne connections khol sakta hai).
+  // MongoDB server ki apni connection limit hoti hai; instances x poolMax us se kam rakhna.
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
 });
 
 // Config galat hone par ye custom error throw hota hai.
@@ -67,7 +80,13 @@ export function loadConfig(env = process.env) {
   }
 
   // Yahan tak aaye matlab saari values valid hain. `data` mein PORT ab number hai, string nahi.
-  const { NODE_ENV, HOST, PORT, LOG_LEVEL } = result.data;
+  const { NODE_ENV, HOST, PORT, LOG_LEVEL, MONGODB_URI, DB_POOL_MAX } = result.data;
+
+  // Production mein database ke bina app chalana galti hai (fail-fast). Dev/test mein optional hai: DB-based features
+  // abhi ke routes mein use nahi hote, aur tests ko database ki zarurat nahi.
+  if (NODE_ENV === 'production' && !MONGODB_URI) {
+    throw new ConfigError(['MONGODB_URI: required when NODE_ENV=production']);
+  }
 
   // LOG_LEVEL diya hai to wahi; nahi diya to tests mein 'silent' (output saaf rahe), baaki jagah 'info'.
   // `??` = sirf undefined/null par right side use karo.
@@ -75,5 +94,13 @@ export function loadConfig(env = process.env) {
 
   // Object.freeze = object read-only ho jaata hai, taaki app mein kahin galti se config badal na jaye.
   // Keys ko readable naam diye (NODE_ENV -> env, HOST -> host...), baaki code yahi naam use karta hai.
-  return Object.freeze({ env: NODE_ENV, host: HOST, port: PORT, logLevel });
+  // mongodbUri undefined ho sakta hai (dev/test): tab app database ke bina chalti hai aur readiness mein `db` check nahi judta.
+  return Object.freeze({
+    env: NODE_ENV,
+    host: HOST,
+    port: PORT,
+    logLevel,
+    mongodbUri: MONGODB_URI,
+    dbPoolMax: DB_POOL_MAX,
+  });
 }

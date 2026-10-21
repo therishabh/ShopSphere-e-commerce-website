@@ -11,7 +11,13 @@ const EX = '/api/v1/examples';
 
 // Har test ke liye fresh app (fresh in-memory data). LOG_LEVEL=silent taaki test output saaf rahe.
 const makeApp = (env = 'test') =>
-  createApp({ config: loadConfig({ NODE_ENV: env, LOG_LEVEL: 'silent' }) });
+  createApp({
+    config: loadConfig({
+      NODE_ENV: env,
+      LOG_LEVEL: 'silent',
+      MONGODB_URI: 'mongodb://localhost:27017/test',
+    }),
+  });
 
 // Koi bhi unmatched route (GET/POST, /api, /api/v2...) ek hi safe JSON 404 deta hai.
 describe('404 and unknown routes', () => {

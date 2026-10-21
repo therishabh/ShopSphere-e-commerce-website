@@ -5,7 +5,7 @@
 // use karta hai. Data in-memory demo list hai; handler ka kaam wahi hai jo baad mein repository karega,
 // lekin sach mein koi product business logic nahi hai.
 
-import { randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import { ConflictError, NotFoundError } from '../errors/app-errors.js';
 import { validate } from '../http/validate.js';
@@ -17,11 +17,14 @@ import {
 } from '../modules/products/products.schemas.js';
 
 // Demo data: kuch fixed products taaki filters/sort/pagination ke results dekhe ja sakein.
+// Demo ke liye ObjectId jaisi id (24 hex chars): asli ObjectId ka format, bina mongoose import kiye.
+const newId = () => randomBytes(12).toString('hex');
+
 function seedProducts() {
   const categories = ['shoes', 'bags', 'watches'];
   const base = Date.UTC(2026, 0, 1);
   return Array.from({ length: 12 }, (_, i) => ({
-    id: randomUUID(),
+    id: newId(),
     sku: `DEMO-${String(i + 1).padStart(3, '0')}`,
     name: `Demo ${categories[i % 3]} ${i + 1}`,
     category: categories[i % 3],
@@ -32,7 +35,7 @@ function seedProducts() {
   }));
 }
 
-// Normalized query ko in-memory list par lagata hai. Ye wahi kaam hai jo Phase 9 mein Prisma query karegi.
+// Normalized query ko in-memory list par lagata hai. Ye wahi kaam hai jo Phase 9 mein Mongoose query karegi.
 // `query.sort[].column` allowlist se aaya hai (user ka string nahi), isliye `item[column]` safe hai.
 function applyListQuery(all, query) {
   const { filters, q, sort } = query;
@@ -72,7 +75,7 @@ export function createValidationExamplesRouter() {
     });
   });
 
-  // GET /demo-products/:productId (productId UUID hona chahiye)
+  // GET /demo-products/:productId (productId 24-hex ObjectId hona chahiye)
   router.get(
     '/demo-products/:productId',
     validate({ params: productIdParamsSchema }),
@@ -88,7 +91,7 @@ export function createValidationExamplesRouter() {
     const input = res.locals.valid.body;
     if (products.some((p) => p.sku === input.sku)) throw new ConflictError('SKU already exists');
     // id aur createdAt server decide karta hai (body strict hai, client ye fields bhej hi nahi sakta).
-    const product = { id: randomUUID(), ...input, createdAt: new Date().toISOString() };
+    const product = { id: newId(), ...input, createdAt: new Date().toISOString() };
     products.push(product);
     res.status(201).location(`${req.baseUrl}/demo-products/${product.id}`).json(product);
   });

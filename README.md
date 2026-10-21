@@ -1,10 +1,10 @@
 # ShopSphere
 
-Multi-vendor e-commerce backend (customers, sellers, admins). Express 5 + ESM JavaScript, PostgreSQL + Prisma, Redis, BullMQ, Socket.IO.
+Multi-vendor e-commerce backend (customers, sellers, admins). Express 5 + ESM JavaScript, MongoDB + Mongoose, Redis, BullMQ, Socket.IO.
 
 > Ye README poora project guide hai: kya banaya, kis sequence mein, kyun, aur code kaise kaam karta hai. Har phase ke baad update hoti hai. Naye developer ya fresher ko sirf ise padh ke project aur uska code samajh aa jana chahiye, aur isi ko recipe ki tarah follow karke doosra project bhi banaya ja sake.
 
-**Current status: Phase 5 complete** (foundation, routing, middleware, centralized errors, aur validation + API conventions: Zod `validate()`, pagination/sort/filter toolkit). **OpenAPI + Swagger UI `main` par nahi hain**: wo branch `feature/openapi-swagger` par hain aur project ke end mein merge honge. Business endpoints (auth, products, orders) abhi nahi bane; module routers khaali hain.
+**Current status: Phase 6 complete** (foundation, routing, middleware, errors, validation, aur ab **MongoDB + Mongoose persistence**: models, validators, migrations, seed, repositories, transactions, readiness). **Database sirf MongoDB hai: PostgreSQL/Prisma/SQL bilkul nahi.** OpenAPI + Swagger UI `main` par nahi hain: wo branch `feature/openapi-swagger` par hain.
 
 ---
 
@@ -47,6 +47,7 @@ Poori file ek saath padhna zaruri nahi. Apne goal ke hisaab se path chuno:
    - [Phase 3 — Middleware pipeline aur request context](#phase-3--middleware-pipeline-aur-request-context)
    - [Phase 4 — Centralized error handling](#phase-4--centralized-error-handling)
    - [Phase 5 — Validation aur API conventions](#phase-5--validation-aur-api-conventions)
+   - [Phase 6 — Persistence: MongoDB + Mongoose](#phase-6--persistence-mongodb--mongoose)
 8. [Current project structure](#8-current-project-structure)
 9. [Run kaise karein (setup, scripts)](#9-run-kaise-karein-setup-scripts)
 10. [Verification results (ab tak)](#10-verification-results-ab-tak)
@@ -66,26 +67,29 @@ ShopSphere ek production-style multi-vendor e-commerce backend hai. Teen type ke
 Architecture: **modular monolith**. Ek HTTP API process aur ek alag worker process, dono same repo mein. Microservices tab tak nahi jab tak koi demonstrated reason na ho.
 
 ```
-clients ──> Nginx ──> API process (Express 5) ──> PostgreSQL (Prisma)
+clients ──> Nginx ──> API process (Express 5) ──> MongoDB (Mongoose)
                           │  └── Redis (cache, sessions)
                           │  └── Socket.IO (realtime)
                           └── outbox rows ──> Worker (BullMQ + Redis)
                                                 └── email / reports / alerts / realtime fan-out
 ```
 
-Module ka layering rule (jab modules aayenge): `route → validation (Zod) → controller (sirf HTTP) → service (business rules, transactions) → repository (Prisma)`. Controller mein business logic nahi.
+Module ka layering rule (jab modules aayenge): `route → validation (Zod) → controller (sirf HTTP) → service (business rules, transactions) → repository (Mongoose)`. Controller mein business logic nahi.
 
 Is repo ka secondary goal: har Express concept (middleware, error handling, `next('route')`, `res.headersSent`, trust proxy, streams, etc.) code + test + doc ke saath demonstrate karna. Isliye ek coverage matrix maintain hota hai (section 12).
 
 ## 2. Quick start
 
-Prerequisite: Node.js >= 24 aur npm. PostgreSQL/Redis abhi zaruri nahi.
+Prerequisites: Node.js >= 24, npm, aur **Docker** (local MongoDB replica set ke liye). Redis abhi zaruri nahi.
 
 ```bash
 git clone https://github.com/therishabh/ShopSphere-e-commerce-website.git
 cd ShopSphere-e-commerce-website
 npm ci                      # lockfile se exact versions
-cp .env.example .env        # optional; defaults kaam karte hain
+cp .env.example .env        # MONGODB_URI is mein hai
+npm run db:up               # MongoDB (single-node replica set) Docker mein
+npm run db:migrate          # collections + validators + indexes
+npm run db:seed             # sample data
 npm run dev                 # server http://127.0.0.1:3000
 ```
 
@@ -93,7 +97,7 @@ Check karo ki chal raha hai:
 
 ```bash
 curl localhost:3000/health/ready
-# {"status":"ready","checks":{}}
+# {"status":"ready","checks":{"db":"up"}}
 
 curl -i localhost:3000/api/v1/examples/ping       # X-Request-Id + security headers dekho; server terminal mein JSON log line
 
@@ -109,19 +113,19 @@ Aage ka detail section 9 mein hai.
 
 ## 3. Tech stack aur fixed decisions
 
-| Area        | Choice                                     | Reason / note                                                                                              |
-| ----------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| Runtime     | Node.js current LTS (`>=24`), ESM          | Native `--watch`; no TypeScript by choice                                                                  |
-| Framework   | Express 5.3.0                              | Async handler ke rejected promises automatically error middleware tak jaate hain (wrapper ki zarurat nahi) |
-| Core DB     | PostgreSQL + Prisma                        | Relational data, transactions, constraints                                                                 |
-| Alt DB      | MongoDB + Mongoose, sirf isolated lab mein | Core data model mein mix nahi hoga                                                                         |
-| Redis       | Cache, BullMQ queues, sessions             | Outage pe commerce state corrupt nahi hona chahiye                                                         |
-| Realtime    | Socket.IO                                  | Order status updates                                                                                       |
-| Storage     | S3-compatible, adapter ke peeche           | Local adapter dev ke liye                                                                                  |
-| Validation  | Zod 4.6.7                                  | Env + request validation                                                                                   |
-| Tests       | Jest 30 + Supertest                        | Native ESM mode                                                                                            |
-| Lint/format | ESLint 10 (flat config) + Prettier 3       |                                                                                                            |
-| Payments    | **Mock provider only**                     | Real card data / live credentials kabhi nahi                                                               |
+| Area        | Choice                                       | Reason / note                                                                                                                                     |
+| ----------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime     | Node.js current LTS (`>=24`), ESM            | Native `--watch`; no TypeScript by choice                                                                                                         |
+| Framework   | Express 5.3.0                                | Async handler ke rejected promises automatically error middleware tak jaate hain (wrapper ki zarurat nahi)                                        |
+| Core DB     | **MongoDB + Mongoose 9** (replica set)       | Document model, flexible catalog, order snapshots embedded; FK/CHECK nahi milte, isliye validators + unique/partial indexes + conditional updates |
+| Migrations  | Apna chhota versioned runner (`migrations/`) | Mongo mein built-in SQL jaisi migrations nahi                                                                                                     |
+| Redis       | Cache, BullMQ queues, sessions               | Outage pe commerce state corrupt nahi hona chahiye                                                                                                |
+| Realtime    | Socket.IO                                    | Order status updates                                                                                                                              |
+| Storage     | S3-compatible, adapter ke peeche             | Local adapter dev ke liye                                                                                                                         |
+| Validation  | Zod 4.6.7                                    | Env + request validation                                                                                                                          |
+| Tests       | Jest 30 + Supertest                          | Native ESM mode                                                                                                                                   |
+| Lint/format | ESLint 10 (flat config) + Prettier 3         |                                                                                                                                                   |
+| Payments    | **Mock provider only**                       | Real card data / live credentials kabhi nahi                                                                                                      |
 
 Saari dependencies `--save-exact` se pinned hain aur `package-lock.json` committed hai.
 
@@ -144,26 +148,27 @@ Phase workflow: prompt do → implement → diff + checks review → fail ho to 
 
 ## 5. Code kaise padhein: reading order aur request walkthrough
 
-### 5.1 Reading order (Phase 5 tak ka code)
+### 5.1 Reading order (Phase 6 tak ka code)
 
 Is order mein files kholo; har step pichle step par build hota hai. Har source file ke saath uska test bhi padho.
 
-| #   | File                                                                                       | Kya samajh aayega                                                                                      |
-| --- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| 1   | `package.json`                                                                             | ESM (`"type": "module"`), scripts, pinned deps                                                         |
-| 2   | `src/config/env.js`                                                                        | Environment variables ek jagah validate hote hain (Zod); baaki code `process.env` nahi chhuta          |
-| 3   | `src/server.js`                                                                            | Process ka entrypoint: `dotenv` -> config -> listen -> signals. App yahan nahi banta                   |
-| 4   | `src/app.js`                                                                               | `createApp()` factory: **mount order** yahin dikhta hai                                                |
-| 5   | `src/health/readiness.js`, `health.routes.js`                                              | Liveness vs readiness; named dependency checks                                                         |
-| 6   | `src/logging/logger.js`, `src/middleware/*.js`                                             | Pino logger + redaction; request ID, request logger, conditional `when/unless`, Helmet                 |
-| 7   | `src/routes/api.routes.js`                                                                 | `/api/v1` prefix, body parsers, module mounts                                                          |
-| 8   | `src/modules/auth/auth.routes.js` (koi bhi)                                                | Khaali-par-mounted module; baaki 6 bilkul same                                                         |
-| 9   | `src/http/route-guards.js`                                                                 | Reusable route-specific middleware (415, 400, 405)                                                     |
-| 10  | `src/errors/app-errors.js`, `to-app-error.js`, `src/http/error-handler.js`, `not-found.js` | Error hierarchy, thrown value ki classification, aur central safe response + logging                   |
-| 11  | `src/http/validate.js`, `src/http/query/*.js`, `src/http/schemas.js`                       | Zod validation middleware, strict query helpers, pagination/sorting allowlist, shared response schemas |
-| 12  | `src/modules/products/products.schemas.js`                                                 | DTO schemas ka representative set (list query, id params, create body, response)                       |
-| 13  | `src/examples/*.routes.js`                                                                 | HTTP, middleware, error aur validation concepts ke working demos; comments mein concept naam likha hai |
-| 14  | `tests/**` (+ `tests/helpers/`)                                                            | Behaviour ka spec; examples/tests se hi seekhna sabse tez hai                                          |
+| #   | File                                                                                                          | Kya samajh aayega                                                                                      |
+| --- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 1   | `package.json`                                                                                                | ESM (`"type": "module"`), scripts, pinned deps                                                         |
+| 2   | `src/config/env.js`                                                                                           | Environment variables ek jagah validate hote hain (Zod); baaki code `process.env` nahi chhuta          |
+| 3   | `src/server.js`                                                                                               | Process ka entrypoint: `dotenv` -> config -> listen -> signals. App yahan nahi banta                   |
+| 4   | `src/app.js`                                                                                                  | `createApp()` factory: **mount order** yahin dikhta hai                                                |
+| 5   | `src/health/readiness.js`, `health.routes.js`                                                                 | Liveness vs readiness; named dependency checks                                                         |
+| 6   | `src/logging/logger.js`, `src/middleware/*.js`                                                                | Pino logger + redaction; request ID, request logger, conditional `when/unless`, Helmet                 |
+| 7   | `src/routes/api.routes.js`                                                                                    | `/api/v1` prefix, body parsers, module mounts                                                          |
+| 7b  | `src/db/` (`database.js`, `models/`, `repositories/`, `map-database-error.js`), `migrations/`, `compose.yaml` | MongoDB connection + models + validators + repositories + transactions + error mapping (Phase 6)       |
+| 8   | `src/modules/auth/auth.routes.js` (koi bhi)                                                                   | Khaali-par-mounted module; baaki 6 bilkul same                                                         |
+| 9   | `src/http/route-guards.js`                                                                                    | Reusable route-specific middleware (415, 400, 405)                                                     |
+| 10  | `src/errors/app-errors.js`, `to-app-error.js`, `src/http/error-handler.js`, `not-found.js`                    | Error hierarchy, thrown value ki classification, aur central safe response + logging                   |
+| 11  | `src/http/validate.js`, `src/http/query/*.js`, `src/http/schemas.js`                                          | Zod validation middleware, strict query helpers, pagination/sorting allowlist, shared response schemas |
+| 12  | `src/modules/products/products.schemas.js`                                                                    | DTO schemas ka representative set (list query, id params, create body, response)                       |
+| 13  | `src/examples/*.routes.js`                                                                                    | HTTP, middleware, error aur validation concepts ke working demos; comments mein concept naam likha hai |
+| 14  | `tests/**` (+ `tests/helpers/`)                                                                               | Behaviour ka spec; examples/tests se hi seekhna sabse tez hai                                          |
 
 ### 5.2 Ek request ka poora safar
 
@@ -267,6 +272,17 @@ Sirf wo concepts jo ab tak code mein use hue hain. Naye phases ke concepts us ph
 | **Sort allowlist (map)**                          | `{ apiName: dbColumn }`; user sirf apiName bhej sakta hai, DB column hamesha map se aata hai, user string se nahi. Isse arbitrary column selection/injection band.                                                               |
 | **Offset vs cursor pagination**                   | Offset (`page`/`limit`) simple hai aur total deta hai, par deep pages slow aur data badalne par unstable. Deep/infinite lists ke liye cursor (keyset) baad mein.                                                                 |
 | **DTO (Data Transfer Object)**                    | API ka request/response shape, database model se alag; DB badle to API na tute. `src/modules/<m>/<m>.schemas.js`.                                                                                                                |
+| **ODM / Mongoose**                                | Object Document Mapper: MongoDB ke documents ko JS objects ki tarah use karne ka library (schemas, validation, queries). Models `src/db/models/`.                                                                                |
+| **Replica set**                                   | MongoDB servers ka group (hamare local mein ek node). Multi-document **transactions sirf replica set par** chalte hain, isliye local container bhi replica set hai.                                                              |
+| **Embedding vs referencing**                      | Embed = child document parent ke andar (cart items, order items, product stock): ek read/atomic write. Reference = alag collection mein `_id` se (users, reviews): jab child alag lifecycle ya unbounded ho.                     |
+| **Collection validator**                          | MongoDB ke server par lagne wala rule (SQL ke CHECK ka roop) jo har write par chalta hai, `$inc`/raw scripts par bhi (error code 121). Mongoose validators in par nahi chalte.                                                   |
+| **Atomic conditional update**                     | `updateOne({ _id, available >= n }, { $inc: ... })`: ek hi operation mein check + change; do requests ek saath aayein to bhi oversell nahi. Isse stock ke liye transaction nahi chahiye.                                         |
+| **Transaction (commit / rollback)**               | Kai writes "ya sab ya koi nahi". `database.transaction(async (repos) => ...)`: throw = rollback, return = commit, conflict par driver retry. Andar external calls (payment/email) nahi.                                          |
+| **Outbox**                                        | Business change aur "baad mein ye kaam karna hai" event ek hi transaction mein likho; worker baad mein uthata hai. Isse event kho nahi sakta.                                                                                    |
+| **TTL index**                                     | Index jo `expiresAt` ke baad document khud delete kar deta hai (tokens, idempotency records): alag cleanup job nahi.                                                                                                             |
+| **Partial index**                                 | Index sirf kuch documents par (e.g. sirf `status: 'ACTIVE'` carts par unique): "ek user ka ek active cart".                                                                                                                      |
+| **ObjectId**                                      | MongoDB ki id (24 hex characters). API mein `id` string ban jaati hai; format `objectId()` validator se check hota hai.                                                                                                          |
+| **Regex escape (ReDoS)**                          | User ka search text regex mein daalne se pehle special characters escape karte hain, warna `.*` sab match karta aur `(a+)+$` server atka sakta.                                                                                  |
 | **Interim**                                       | Abhi ke liye kaafi, baad ke phase mein replace (e.g. Phase 2 ka `clientErrorHandler` Phase 4 mein central `errorHandler` se replace hua).                                                                                        |
 | **Modular monolith**                              | Ek deployable app, andar alag modules (auth, products, ...). Microservices nahi.                                                                                                                                                 |
 | **Mock provider**                                 | Payment/email ke test-safe fake adapters; real credentials kabhi nahi.                                                                                                                                                           |
@@ -864,7 +880,7 @@ Allowlist ek **map** hai (API naam -> DB column). Output mein sirf mapped column
 
 **Step 7 — Response convention (`src/http/schemas.js`).** Blanket envelope nahi: single resource = bare object (`201` + `Location` create par); collection = `{ items, pagination }`; `204` empty; error = `{ error: { code, message, details? } }`.
 
-**Step 8 — Demo router (`src/examples/validation-examples.routes.js`).** Teen routes: `GET /demo-products` (list), `GET /demo-products/:productId` (UUID), `POST /demo-products` (create, duplicate SKU = 409). In-memory 12 sample products; `applyListQuery` normalized query ko filter/sort/slice karta hai (wahi kaam jo Phase 9 mein Prisma karegi). `api.routes.js` ise non-production mein `/examples/validation` par mount karta hai.
+**Step 8 — Demo router (`src/examples/validation-examples.routes.js`).** Teen routes: `GET /demo-products` (list), `GET /demo-products/:productId` (UUID; Phase 6 mein ObjectId ho gaya), `POST /demo-products` (create, duplicate SKU = 409). In-memory 12 sample products; `applyListQuery` normalized query ko filter/sort/slice karta hai (wahi kaam jo Phase 9 mein Prisma karegi). `api.routes.js` ise non-production mein `/examples/validation` par mount karta hai.
 
 **Step 9 — Existing tests (naye nahi).** Is phase ke tests (`query-helpers`, `validate-middleware`, `validation`) naya rule aane se pehle likhe gaye the; ab se naye tests nahi likhe jaate. Mutation checks se dekha ki safety pieces sach mein tests pakadte hain: sort regex hataya -> 27 fail; product body `strictObject` -> `object` -> 8 fail; `validate()` hataya -> ~100 fail; `booleanString` ko `z.coerce.boolean()` -> 11 fail; JSON content-type guard hataya -> 3 fail. (Seekh: mutation script mein hamesha assert lagao ki replace hua, Prettier ne ek baar line format badal di thi aur mutation silently apply nahi hui.)
 
@@ -893,6 +909,92 @@ Us branch par README (Phase 5 ka OpenAPI explainer, contract.js ka kaam, `/docs`
 
 Result (main): 390/390 existing tests pass, lint aur format clean.
 
+### Phase 6 — Persistence: MongoDB + Mongoose
+
+**Goal:** poora project ek hi database par: **MongoDB + Mongoose** (PostgreSQL/Prisma/SQL bilkul nahi). Collections/schemas, integrity ke rules, migrations, seed, connection module, readiness, repositories, transaction helper, aur Mongo error mapping. Ismein naye tests nahi likhe gaye (owner ka rule); evidence repeatable manual verification se hai.
+
+**Pehle decision badla (aur kyun).** Phase 6 originally PostgreSQL + Prisma ke liye plan tha. Owner ne poora project MongoDB par rakhne ka decision liya. Maine pehle honest trade-offs bataye: FK/CHECK constraints nahi milte, transactions ke liye replica set chahiye, migrations alag se banane padte hain; fir owner ke confirm karne par switch kiya. Is liye pehle jo Postgres/Prisma wala Phase 6 kaam shuru hua tha wo owner ne discard kar diya (kabhi commit nahi hua); maine uske bacha hua Docker container, volume aur khaali folders hataye.
+
+Sequence:
+
+**Step 1 — Playbook aur project ke decisions badle.** `ShopSphere_Claude_Code_Prompt_Playbook.md` (repo copy + Downloads copy) mein: project decisions (MongoDB + Mongoose, replica set, no SQL), Prompt 06 (collections, embedding vs referencing, validators, migrations, replica set), Prompt 09 (stock ke liye atomic conditional updates), Prompt 11 (NoSQL operator injection + regex/ReDoS), Prompt 20 (Compose mein MongoDB replica set), Prompt 22 (ab "MongoDB advanced-features lab": aggregation, TTL, text/partial indexes, `explain()`, change streams, `$jsonSchema`), checklist. `CLAUDE.md` ke fixed decisions, `docs/architecture/*`, aur matrix ke section 6 aur 22 bhi badle; memory mein bhi save kiya.
+
+**Step 2 — Versions aur docs verify kiye** (CLAUDE.md rule): `mongoose@9.11.2` (Node >= 20.19), `mongo:8` image (server 8.3.13). Mongoose docs se: `connection.transaction()` driver ke `withTransaction` ko wrap karta hai, aur `transactionAsyncLocalStorage` se transaction ke andar session apne aap judta hai.
+
+**Step 3 — `compose.yaml`: single-node replica set.** Transactions sirf replica set par chalte hain, to local container bhi replica set hai: `--replSet rs0` aur healthcheck jo `rs.status()` fail hone par `rs.initiate()` chalata hai. Port sirf `127.0.0.1` par. Local mein auth band hai (auth + replica set ke liye keyFile chahiye, throwaway DB ke liye overkill); production mein authenticated cluster ki URI.
+
+```bash
+npm run db:up      # docker compose up -d mongo
+```
+
+**Step 4 — Probe: design se pehle Mongoose ka asli behaviour dekha.** Ek throwaway script se confirm hua:
+
+- Initial connect fail hone par **usi connection par `openUri` dobara chalta hai** (isse background retry loop banta hai).
+- `connection.transaction()` + `transactionAsyncLocalStorage`: rollback bina `{ session }` pass kiye kaam karta hai; do conflicting transactions mein haarne wala apne aap retry hota hai (callback 3 baar chala).
+- Atomic conditional decrement: 3 parallel requests mein sirf 1 safal (oversell nahi), bina transaction ke.
+- Partial index (`$in`) aur TTL index chalte hain.
+- **Gotcha:** `updateOne` par Mongoose validators default se **nahi** chalte (negative qty allowed ho gaya), aur `$inc` par update validators kabhi nahi chalte. Isliye `runValidators` global + **server-side collection validators** (SQL ke CHECK ka Mongo roop) jo har write par lagte hain.
+
+**Step 5 — Config (`src/config/env.js`).** `MONGODB_URI` (`mongodb://` ya `mongodb+srv://`, **production mein required**, dev/test mein optional) aur `DB_POOL_MAX` (default 10). `ServiceUnavailableError` (503, `Retry-After`, `isOperational: false`) naya error class.
+
+**Step 6 — Models (`src/db/models/`).** 15 models, 4 files (identity, catalog, commerce, reliability) + `enums.js`, `shared.js`, `validators.js`. Har schema `strict: 'throw'` (schema ke bahar ka field error), timestamps, enums, aur JSON mein `_id` -> `id`. Embedding vs referencing ke decisions:
+
+- **Stock product ke andar embedded** (`stock: { onHand, reserved }`): ek document par atomic update, transaction nahi chahiye.
+- **Cart items cart ke andar**, **order items order ke andar snapshot** (naam/sku/price copy; seller ke orders `items.sellerId` multikey index se).
+- Users, sellers, reviews, payment attempts alag collections (alag lifecycle, unbounded growth).
+- `categorySlug` product mein denormalized (category filter bina join ke).
+  Indexes: unique (email, seller+sku, review pair, wishlist pair, order number, token hashes), partial unique (ek user ka ek ACTIVE cart; provider reference sirf jab set ho), TTL (tokens, idempotency records), partial outbox index (sirf PENDING/FAILED).
+
+**Step 7 — Server-side validators (`validators.js`).** Negative stock/price, `reserved <= onHand`, rating 1..5, cart quantity 1..100, order total = subtotal + shipping + tax, lowercase email, payment amount > 0, ye sab `collMod`/`createCollection` ke validators hain, to `$inc` ya raw script se bhi andar nahi ja sakte (error code 121).
+
+**Step 8 — Database module (`src/db/database.js`).** `createDatabase({ uri, poolMax, logger })` -> `{ connection, models, repositories, connect, transaction, checkReady, disconnect }`.
+
+```js
+mongoose.set('transactionAsyncLocalStorage', true); // transaction ke andar session khud judta hai
+mongoose.set('runValidators', true); // updates par bhi schema validators
+// connect options: maxPoolSize, serverSelectionTimeoutMS 5000, bufferTimeoutMS 5000, autoIndex false, autoCreate false
+```
+
+- `connect({ retry: true })`: fail hone par backoff (0.5s -> 15s) ke saath background retry; server DB ke bina bhi start hota hai.
+- `autoIndex`/`autoCreate` band: production mein app restart par bade collection par index build nahi hota; wo migrations ka kaam hai.
+- `checkReady()`: `readyState === 1` + `admin().ping()`.
+- Logs mein URI/credentials kabhi nahi (sirf error ka naam aur message).
+
+**Step 9 — Error mapping (`src/db/map-database-error.js`).** `toAppError` ab Mongo errors ko bhi classify karta hai: duplicate key `11000` -> 409, validator failure `121` / write conflict `112` / `VersionError` -> 409, Mongoose `ValidationError` / `CastError` -> 400 (value echo nahi), `DocumentNotFoundError` -> 404, network/selection/auth/timeout/buffering errors -> 503, `StrictModeError` aur unknown -> 500.
+
+**Step 10 — Repositories (`src/db/repositories/`).** `users`, `categories`, `products`, `audit`, `outbox`, `sequences` (aur `serialize.js`: `_id` -> `id`, `__v` hata ke). `users` mein `passwordHash` `select: false` hai, sirf `findAuthByEmail` use laata hai. `products.list(normalizedQuery)` Phase 5 ke normalized query ko seedha Mongo filter/sort/skip/limit banata hai (filter values validated primitives, isliye `{ "$ne": null }` jaisa operator injection nahi; search text regex-escape: `q=.*` aur `(a+)+$` kuch match nahi karte). `audit` secret-jaisi keys (nested bhi) reject karta hai. `sequences.next(name)` atomic `$inc` + upsert.
+
+**Step 11 — Migrations (`src/db/migrations.js`, `migrations/`, `scripts/db.js`).** Mongo mein SQL jaisi built-in migrations nahi, to chhota versioned runner: `migrations/NNNN_name.js` (`name`, `up({ database })`), applied names `_migrations` collection mein. `0001_collections_validators_and_indexes` har collection validator ke saath banata hai aur schema indexes sync karta hai (idempotent).
+
+```bash
+npm run db:migrate   # pending migrations
+npm run db:status    # applied / PENDING
+npm run db:seed      # sample data (idempotent)
+npm run db:reset     # DB drop + migrate + seed (production mein mana)
+```
+
+**Step 12 — Seed (`src/db/seed.js`).** 5 users (`@shopsphere.test`, passwordHash nahi: password hashing Phase 7 mein), 3 seller profiles (2 approved, 1 pending), 3 categories, 14 products (12 ACTIVE, 1 DRAFT, 1 PENDING_REVIEW), reviews, wishlist, ek active cart. Upsert se rerun-safe.
+
+**Step 13 — Wiring (`server.js`, `app.js`).** `startServer` DB banata hai (`config.mongodbUri` ho to), readiness mein `db: () => database.checkReady()` jodta hai, `database.connect()` background mein chalata hai, `app.locals.database` set karta hai, aur `close()` mein **sabse aakhir** mein `database.disconnect()` (readiness off -> HTTP close -> DB close). `MONGODB_URI` na ho (dev/test) to warning log aur readiness mein db check nahi.
+
+**Step 14 — Phase 5 ke DTOs UUID se ObjectId.** `objectId()` helper (24 hex), `productIdParamsSchema` aur `productSchema.id` ObjectId, demo router ke ids `randomBytes(12).toString('hex')`.
+
+**Step 15 — Purane tests mein minimal edits (naye nahi).** Deliberate behaviour changes ki wajah se: production configs ko ek dummy `MONGODB_URI` chahiye (production mein required), config default object mein `dbPoolMax: 10`, aur `validation.test.js` mein UUID constants ki jagah ObjectId.
+
+**Step 16 — Manual verification (`docs/modules/database-and-persistence.md` mein commands aur observed results).**
+
+- 19 constraint checks: validators (`121`) aur duplicates (`11000`) sahi; partial indexes sahi allow/deny.
+- Repositories: filters/sort/pagination/search, hidden `passwordHash`, regex-special searches 3-8 ms mein khaali.
+- Transactions: commit se 3 documents, rollback se 0 (session pass kiye bina), conflicting transactions retry hue, 20 concurrent sequence numbers unique, atomic stock reservation mein ek hi jeeta.
+- Server: DB up 200, Mongo band 503 (live 200), restart par apne aap recover, DB band hote hue boot par bhi server start aur baad mein 200, SIGTERM clean exit, production mein URI ke bina exit 1.
+  Verification mein 3 cheezein pakdi gayi aur theek hui: `findOneAndUpdate({ new: true })` Mongoose 9 mein deprecated (`returnDocument: 'after'`); `$inc` par validators nahi chalte (isliye server-side validators); shutdown ek in-flight connect attempt ka intezaar karta hai (~3s, max 5s).
+
+**Step 17 — Docs aur matrix.** `docs/modules/database-and-persistence.md` (data model, embedding vs referencing, integrity table (database vs application enforced), indexes, transactions, migrations, failure handling, manual verification, test DB strategy). Matrix section 6: 12 rows `verified`, "Test database isolation" `planned` (strategy documented, tests nahi likhe).
+
+Result: 390/390 purane tests pass (koi naya test nahi), lint aur format clean.
+
+**Dhyaan:** branch `feature/openapi-swagger` abhi purane (UUID wale) `main` par based hai. Merge karte waqt ObjectId wale changes (`products.schemas.js`, `fields.js`, validation tests/spec) conflict de sakte hain.
+
 ## 8. Current project structure
 
 ```
@@ -913,10 +1015,14 @@ Result (main): 390/390 existing tests pass, lint aur format clean.
 │   │   └── health.routes.js      # /health/live, /health/ready
 │   ├── routes/api.routes.js      # /api/v1: parsers + module mounts (+ examples, non-prod)
 │   ├── modules/<name>/<name>.routes.js   # auth users sellers products cart orders admin (empty, mounted)
+│   ├── db/                       # database.js, migrations.js, seed.js, serialize.js, map-database-error.js, models/, repositories/
 │   ├── errors/                   # app-errors.js (hierarchy), to-app-error.js (classification), zod-details.js
 │   ├── http/                     # error-handler.js, not-found.js, route-guards.js, validate.js, schemas.js
 │   │   └── query/                # fields.js, pagination.js, sorting.js, list-query.js
 │   └── examples/                 # teaching only, /api/v1/examples/*, non-prod: http-examples, middleware-examples, error-examples, validation-examples
+├── migrations/                   # 0001_collections_validators_and_indexes.js (versioned, Mongo)
+├── scripts/db.js                 # CLI: migrate | status | seed | reset
+├── compose.yaml                  # local MongoDB single-node replica set
 ├── public/example.txt            # served at /static
 ├── tests/
 │   ├── helpers/log-capture.js    # Pino ko memory mein capture (tests)
@@ -925,49 +1031,54 @@ Result (main): 390/390 existing tests pass, lint aur format clean.
 └── docs/
     ├── architecture/ (overview.md, phases.md, decisions/)
     ├── coverage/EXPRESS_CONCEPT_MATRIX.md
-    ├── modules/ application-foundation.md, routing-and-http.md, middleware.md, error-handling.md, validation-and-api-contracts.md
+    ├── modules/ application-foundation.md, routing-and-http.md, middleware.md, error-handling.md, validation-and-api-contracts.md, database-and-persistence.md
     └── runbooks/ security/ testing/   # abhi sirf index
 ```
 
-Planned: `src/worker.js`, `prisma/`, `labs/`, `deploy/`. Layout Phase 2+ mein evolve ho sakta hai.
+Planned: `src/worker.js`, `labs/`, `deploy/`. Layout Phase 2+ mein evolve ho sakta hai.
 
 ## 9. Run kaise karein (setup, scripts)
 
-Prerequisites: Node.js >= 24, npm. PostgreSQL/Redis abhi zaruri nahi.
+Prerequisites: Node.js >= 24, npm, Docker (local MongoDB ke liye). Redis abhi zaruri nahi.
 
 ```bash
 npm ci
-cp .env.example .env    # optional, defaults kaam karte hain
+cp .env.example .env    # MONGODB_URI, DB_POOL_MAX isme hain
+npm run db:up           # Docker mein MongoDB (replica set)
+npm run db:migrate && npm run db:seed
 npm run dev             # http://127.0.0.1:3000/health/ready
 ```
 
-| Script                            | Kaam                                                           |
-| --------------------------------- | -------------------------------------------------------------- |
-| `npm run dev`                     | `node --watch` + `.env` auto-load                              |
-| `npm start`                       | Real environment variables ke saath run                        |
-| `npm test`                        | Jest + Supertest (native ESM, experimental warning normal hai) |
-| `npm run lint`                    | ESLint                                                         |
-| `npm run format` / `format:check` | Prettier write / check                                         |
+| Script                             | Kaam                                                           |
+| ---------------------------------- | -------------------------------------------------------------- |
+| `npm run dev`                      | `node --watch` + `.env` auto-load                              |
+| `npm start`                        | Real environment variables ke saath run                        |
+| `npm test`                         | Jest + Supertest (native ESM, experimental warning normal hai) |
+| `npm run lint`                     | ESLint                                                         |
+| `npm run format` / `format:check`  | Prettier write / check                                         |
+| `npm run db:up` / `db:down`        | Local MongoDB container start / stop                           |
+| `npm run db:migrate` / `db:status` | Migrations apply / status                                      |
+| `npm run db:seed` / `db:reset`     | Sample data / poora DB drop + migrate + seed (dev only)        |
 
-Environment variables: `NODE_ENV` (`development\|test\|production`, default `development`), `HOST` (default `127.0.0.1`), `PORT` (default `3000`, `0` = ephemeral), `LOG_LEVEL` (`trace|debug|info|warn|error|fatal|silent`; default `info`, tests mein `silent`).
+Environment variables: `NODE_ENV` (`development\|test\|production`, default `development`), `HOST` (default `127.0.0.1`), `PORT` (default `3000`, `0` = ephemeral), `LOG_LEVEL` (`trace|debug|info|warn|error|fatal|silent`; default `info`, tests mein `silent`), `MONGODB_URI` (`mongodb://` ya `mongodb+srv://`; **production mein required**, dev/test mein optional: na ho to DB ke bina chalta hai aur warning), `DB_POOL_MAX` (default 10).
 
 Endpoints abhi:
 
 | Endpoint                                                      | Response                                                                                                                                               |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `GET /health/live`                                            | `200 {"status":"live"}`                                                                                                                                |
-| `GET /health/ready`                                           | `200 {"status":"ready","checks":{}}`, ya `503` (`not_ready` / `shutting_down`)                                                                         |
+| `GET /health/ready`                                           | `200 {"status":"ready","checks":{"db":"up"}}` (DB configured ho to), ya `503` (`not_ready` / `shutting_down`)                                          |
 | `GET /static/example.txt`                                     | `200 text/plain` (`express.static`, `public/`)                                                                                                         |
 | `/api/v1/{auth,users,sellers,products,cart,orders,admin}/*`   | `404` abhi (modules khaali)                                                                                                                            |
 | `/api/v1/examples/*`                                          | Teaching endpoints (non-production only): `ping`, `echo/:value`, `echo/json`, `echo/form`, `old-notes`, `notes`, `notes/:id`, `notes/:noteId/comments` |
 | `/api/v1/examples/middleware/*`                               | Middleware demos (non-production only): `chain`, `conditional`, `guarded`, `fail`, `app-config`, `stats`                                               |
-| `/api/v1/examples/validation/demo-products` (+ `/:productId`) | Validation demo (non-production only): `GET` list (page, limit, sort, filters, q), `GET` by UUID, `POST` create. In-memory sample data                 |
+| `/api/v1/examples/validation/demo-products` (+ `/:productId`) | Validation demo (non-production only): `GET` list (page, limit, sort, filters, q), `GET` by ObjectId, `POST` create. In-memory sample data             |
 | `/api/v1/examples/errors/*`                                   | Error demos (non-production only): `raise/:kind`, `sync-throw`, `async-reject`, `next-err`, `throw-string`, `service/*`, `after-headers`               |
 | anything else                                                 | `404 {"error":{"code":"NOT_FOUND","message":"Resource not found"}}`                                                                                    |
 
 ## 10. Verification results (ab tak)
 
-Phase 5 ke end par (main) actual run hue commands (pichhle phases ke checks bhi included):
+Phase 6 ke end par (main) actual run hue commands (pichhle phases ke checks bhi included):
 
 | Command                                                       | Result                                                         |
 | ------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -989,48 +1100,50 @@ Phase 2 extras: ordering test ka mutation check (order badalne par 1 test fail, 
 
 Comments pass (alag se, Phase ke bahar): 33 JS files mein sirf comments jode gaye; AST compare (comments ke bina HEAD vs working tree) mein 0 code changes; lint, format aur 183 tests pass.
 
-Environment-dependent checks (Postgres, Redis, Docker) abhi applicable nahi.
+Phase 6 extras (MongoDB 8.3.13 replica set, Docker): `db:migrate` ek baar apply + dobara no-op; `db:seed` do baar = same counts; 19 constraint checks (validators `121`, duplicates `11000`, partial indexes); repositories/transactions/error-mapping probe (60+ checks, sab pass; rollback, retry, atomic reservation, 503 mapping); server readiness up/down/recover, DB band hote hue boot, SIGTERM; config errors (production mein URI ke bina exit 1). Koi naya automated test nahi (owner ka rule): evidence `docs/modules/database-and-persistence.md` mein.
+
+Environment-dependent checks: MongoDB (Docker) ab zaruri hai DB features verify karne ke liye; Redis abhi applicable nahi.
 
 ## 11. Roadmap (Phase 0–25)
 
-| #   | Phase                                                                   | Status  |
-| --- | ----------------------------------------------------------------------- | ------- |
-| 0   | Guardrails                                                              | done    |
-| 1   | Foundation (app/server, config, health)                                 | done    |
-| 2   | HTTP & routing (`/api/v1`, params/query/body, static, 404)              | done    |
-| 3   | Middleware pipeline, request IDs, `res.locals`, `req.app`               | done    |
-| 4   | Error handling (hierarchy, `headersSent`)                               | done    |
-| 5   | Validation, pagination (OpenAPI + Swagger: branch par, baad mein merge) | done    |
-| 6   | PostgreSQL + Prisma, migrations, repositories, transactions             | next    |
-| 7   | Authentication (hashing, refresh rotation, verify/reset)                | planned |
-| 8   | Authorization, ownership, sessions, CSRF                                | planned |
-| 9   | Catalog, inventory concurrency, reviews, wishlists                      | planned |
-| 10  | Cart, checkout, idempotency, order state machine                        | planned |
-| 11  | Security hardening + threat model                                       | planned |
-| 12  | Uploads (Multer), storage adapters, CSV streaming                       | planned |
-| 13  | Redis caching + benchmarks                                              | planned |
-| 14  | BullMQ worker, retries, outbox                                          | planned |
-| 15  | Webhooks (signature, idempotency)                                       | planned |
-| 16  | OAuth2 / OIDC (PKCE, state, nonce)                                      | planned |
-| 17  | Socket.IO realtime + notifications                                      | planned |
-| 18  | Test strategy, coverage, CI                                             | planned |
-| 19  | Observability + graceful shutdown                                       | planned |
-| 20  | Docker, Nginx, worker_threads, scaling                                  | planned |
-| 21  | Express concept lab (+ Express 4 compat lab)                            | planned |
-| 22  | Mongoose lab                                                            | planned |
-| 23  | Docs audit                                                              | planned |
-| 24  | Concept coverage audit                                                  | planned |
-| 25  | Release gate                                                            | planned |
+| #   | Phase                                                                             | Status  |
+| --- | --------------------------------------------------------------------------------- | ------- |
+| 0   | Guardrails                                                                        | done    |
+| 1   | Foundation (app/server, config, health)                                           | done    |
+| 2   | HTTP & routing (`/api/v1`, params/query/body, static, 404)                        | done    |
+| 3   | Middleware pipeline, request IDs, `res.locals`, `req.app`                         | done    |
+| 4   | Error handling (hierarchy, `headersSent`)                                         | done    |
+| 5   | Validation, pagination (OpenAPI + Swagger: branch par, baad mein merge)           | done    |
+| 6   | MongoDB + Mongoose: models, validators, migrations, repositories, transactions    | done    |
+| 7   | Authentication (hashing, refresh rotation, verify/reset)                          | next    |
+| 8   | Authorization, ownership, sessions, CSRF                                          | planned |
+| 9   | Catalog, inventory concurrency, reviews, wishlists                                | planned |
+| 10  | Cart, checkout, idempotency, order state machine                                  | planned |
+| 11  | Security hardening + threat model                                                 | planned |
+| 12  | Uploads (Multer), storage adapters, CSV streaming                                 | planned |
+| 13  | Redis caching + benchmarks                                                        | planned |
+| 14  | BullMQ worker, retries, outbox                                                    | planned |
+| 15  | Webhooks (signature, idempotency)                                                 | planned |
+| 16  | OAuth2 / OIDC (PKCE, state, nonce)                                                | planned |
+| 17  | Socket.IO realtime + notifications                                                | planned |
+| 18  | Test strategy, coverage, CI                                                       | planned |
+| 19  | Observability + graceful shutdown                                                 | planned |
+| 20  | Docker, Nginx, worker_threads, scaling                                            | planned |
+| 21  | Express concept lab (+ Express 4 compat lab)                                      | planned |
+| 22  | MongoDB features lab (aggregation, TTL/text indexes, change streams, $jsonSchema) | planned |
+| 23  | Docs audit                                                                        | planned |
+| 24  | Concept coverage audit                                                            | planned |
+| 25  | Release gate                                                                      | planned |
 
 Detail: [docs/architecture/phases.md](docs/architecture/phases.md).
 
 ## 12. Concept coverage matrix ka status
 
-[docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md): 235 concepts. Abhi sections 1 (Foundation, 7), 2 (HTTP & routing, 14), 3 (Middleware, 14) 4 (Error handling, 9) aur 5 (Validation & API contracts, 8 of 10) `verified` (52 concepts); section 5 ke "OpenAPI spec" aur "Swagger UI" `planned` hain (branch `feature/openapi-swagger`); baaki sab `planned`. Har phase ke baad sirf evidence-backed rows update hote hain.
+[docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md): 234 concepts. Abhi sections 1-4 (44 concepts), section 5 (8 of 10: OpenAPI aur Swagger branch par) aur section 6 (12 of 13: "Test database isolation" `planned`, strategy documented) `verified`: kul **64 verified**. Baaki `planned`. Har phase ke baad sirf evidence-backed rows update hote hain.
 
 ## 13. Is project ko recipe ki tarah reuse karna
 
-Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 ka reusable sequence:
+Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 + 6 ka reusable sequence:
 
 1. Pehle `CLAUDE.md` + docs skeleton + coverage matrix banao (rules aur tracking pehle, code baad mein).
 2. `npm init`, `"type": "module"`, `engines` set karo; dependencies `--save-exact`; lockfile commit.
@@ -1052,15 +1165,23 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 ka reusable sequence:
 18. Express 5 mein async handlers par wrapper mat lagao. `res.headersSent` check karke default handler ko delegate karo.
 19. Validation: har request schema `z.strictObject`; `validate({params, query, body})` handler se pehle; handler sirf `res.locals.valid` padhe. Query ke liye `z.coerce` nahi, strict string-first helpers.
 20. List endpoints: ek `buildListQuerySchema` (page/limit offset, sort allowlist **map**, filters allowlist, search) jo normalized query de; DB column kabhi user string se nahi.
+21. MongoDB: local mein single-node **replica set** (transactions ke liye), `autoIndex`/`autoCreate` off, collections/indexes/validators migrations se. Mongoose globals: `transactionAsyncLocalStorage`, `runValidators`, `strictQuery`.
+22. FK/CHECK nahi hote: unique + partial/TTL indexes, **server-side collection validators** (`$inc` par bhi lagte hain), atomic conditional updates, aur transactions se integrity banao; "database vs application enforced" table likho.
+23. Embed vs reference: bounded aur saath padhe jaane wala child embed (cart/order items, stock), shared/unbounded alag collection. Order items snapshot.
+24. Server DB ke bina bhi start ho (background connect retry), readiness `db` check se 503/200 de, shutdown mein DB sabse aakhir mein band. Search text regex-escape karo.
 
 ## 14. Known limitations / tradeoffs
 
 - Graceful shutdown abhi minimal hai (server close + readiness 503). Request draining with deadline aur ordered dependency close Phase 19 mein.
-- `/health/ready` abhi koi real dependency check nahi karta (koi dependency hai hi nahi); DB check Phase 6 mein.
 - Validation errors 400 hain (422 nahi), `details` entries `{source?, path, message}`; purane teaching routes (notes, echo) abhi simple inline Zod use karte hain.
 - **OpenAPI + Swagger UI `main` par nahi hain** (owner ka decision: abhi development par focus). Wo branch `feature/openapi-swagger` par pushed hain; merge steps Phase 5 ke Step 12 mein.
+- **Foreign keys nahi hote**: kisi `userId`/`productId` ka sach mein exist karna application ka kaam hai (dangling reference possible); deletes soft/archive se (convention).
+- Local MongoDB container mein auth band hai (sirf `127.0.0.1`); production mein authenticated cluster zaruri. Transactions ke liye replica set zaruri (plain `mongod` par nahi).
+- Name search regex hai (index use nahi karta); text index / Atlas Search Phase 13 mein.
+- Migrations ka runner chhota hai: lock nahi, ek hi jagah (deploy step) se chalao; `syncIndexes` purane indexes drop karta hai, aage ki migrations specific index operations se likho.
+- DB tests ke liye strategy documented hai (separate database, cleanup) lekin koi test likhe nahi gaye. Evidence manual verification hai.
+- Branch `feature/openapi-swagger` abhi UUID wale purane `main` par based hai; merge par ObjectId changes conflict de sakte hain.
 - Offset pagination deep pages par slow hai (`page` max 10000); cursor pagination abhi nahi bani.
-- DB/driver errors abhi sab generic 500 hain; known DB errors (unique violation -> `ConflictError`) ka mapping Phase 6 mein repository boundary par.
 - Unexpected-error logs mein asli error message aata hai; Pino redaction sirf known keys ko cover karti hai, to error messages secrets se mat banao.
 - Rate limiting, authentication/authorization errors ke classes bane hain lekin unhe throw karne wale features aage ke phases mein.
 - `/api/v1/examples` abhi inline Zod use karta hai; shared validation + response convention Phase 5 mein. Examples in-memory hain aur production mein mount nahi hote.
@@ -1075,44 +1196,50 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 ka reusable sequence:
 
 ## 15. FAQ / troubleshooting
 
-| Problem                                                             | Wajah / fix                                                                                                                                                                                                                                                                                                                            |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Server start nahi hota, `Invalid environment configuration`         | Env var galat hai (e.g. `PORT=abc`, `NODE_ENV=staging`). Message mein saari invalid fields listed hain. `.env` ya shell env theek karo.                                                                                                                                                                                                |
-| `EADDRINUSE`                                                        | Port pehle se use mein hai. `PORT` badlo ya purana process band karo (`lsof -i :3000`).                                                                                                                                                                                                                                                |
-| `.env` badalne par kuch nahi badla                                  | `npm run dev` `.env` change par restart nahi karta; manually restart karo. Aur shell mein pehle se set env var `.env` ko override kar deta hai (dotenv override nahi karta).                                                                                                                                                           |
-| `npm test` par `ExperimentalWarning: VM Modules`                    | Normal hai: Jest native ESM `--experimental-vm-modules` se chalta hai.                                                                                                                                                                                                                                                                 |
-| Test mein `jest is not defined`                                     | ESM mein `jest` global nahi; `import { jest } from '@jest/globals'` karo.                                                                                                                                                                                                                                                              |
-| `GET /api/v1/auth/login` 404 kyun deta hai?                         | Module abhi khaali hai (Phase 7 mein bhara jayega). Fake endpoint nahi banate.                                                                                                                                                                                                                                                         |
-| `/api/v1/examples/*` production mein 404 kyun?                      | Teaching endpoints sirf `NODE_ENV !== 'production'` mein mount hote hain.                                                                                                                                                                                                                                                              |
-| `/notes/abc` par 400 kyun?                                          | `requireNumericParam('id')` route middleware positive integer maangta hai. Express 5 mein inline regex (`:id(\\d+)`) support nahi.                                                                                                                                                                                                     |
-| Tests mein logs kyun nahi dikhte?                                   | `NODE_ENV=test` par `LOG_LEVEL` default `silent` hai. Dekhna ho to `LOG_LEVEL=debug npm test`, ya test mein `createLogCapture()` use karo.                                                                                                                                                                                             |
-| Mera `X-Request-Id` badal gaya                                      | Sirf `[A-Za-z0-9._-]{8,128}` accept hota hai; chhota/lamba/special chars wala ID replace hota hai (log injection se bachne ke liye).                                                                                                                                                                                                   |
-| Logs mein full URL/params kyun nahi dikhte?                         | Intentional: route pattern + request ID log hota hai; query/path-param values mein tokens ho sakte hain. Debug ke liye request ID se context dhundo.                                                                                                                                                                                   |
-| `app.get(...)` `createApp()` ke baad lagaya, 404 aa raha hai        | 404 handler pehle registered hai; late routes tak request pahunchti hi nahi. Route router ke andar add karo.                                                                                                                                                                                                                           |
-| Naya validated route kaise add karun?                               | `docs/modules/validation-and-api-contracts.md` ka "How to add a validated route": schema (`z.strictObject`) -> `router.x(path, validate({...}), handler)` -> handler `res.locals.valid` padhe -> manual verification (curl) likho.                                                                                                     |
-| `?limit=10abc` ya `?page=1&page=2` 400 kyun deta hai?               | Query values strict string patterns se check hoti hain (`z.coerce` nahi) aur repeated keys arrays banti hain jo string schema fail karte hain.                                                                                                                                                                                         |
-| Request mein extra field bhejne par 400 kyun?                       | Schemas `z.strictObject` hain; unknown field reject hota hai (mass-assignment se bachne ke liye). Naya field accept karna ho to schema mein add karo (non-breaking change).                                                                                                                                                            |
-| `sort=password` jaisi cheez kaise rokta hai?                        | Sort allowlist map hai (`{price: 'priceCents', ...}`) aur uska regex sirf allowed naam accept karta hai; DB column hamesha map se aata hai.                                                                                                                                                                                            |
-| Naya error type kaise add karun?                                    | `src/errors/app-errors.js` mein `AppError` extend karo (status + stable `code`), service/handler mein `throw` karo. Handler mein kuch nahi badalna. Detail: `docs/modules/error-handling.md`.                                                                                                                                          |
-| Production mein 500 par kuch detail kyun nahi milta?                | By design: client ko generic message. Asli error + stack server log mein `unexpected error` line (`level: 50`) mein hai; response header `X-Request-Id` se wo line dhundo.                                                                                                                                                             |
-| `asyncHandler`/try-catch kyun nahi?                                 | Express 5 async handler ke throw aur rejected Promise ko khud error middleware tak bhejta hai. Express 4 mein wrapper chahiye hota tha.                                                                                                                                                                                                |
-| Mere `throw new Error('...')` ka message client ko kyun nahi dikha? | Plain `Error` unexpected maana jata hai (generic 500). Client ko message dikhana hai to matching `AppError` subclass throw karo.                                                                                                                                                                                                       |
-| `src/` ke code ke comments kis style mein likhne hain?              | Hinglish, English technical terms ke saath: file ka purpose, design/ordering ka reason, aur library ka behaviour jo naye developer ko na pata ho. Tests mein naye comments nahi likhte. Models: `env.js`, `server.js`, `app.js`. Comments add karne ke baad check karo ki code same hai (AST compare) aur lint/format/tests pass hain. |
-| Naya env var kaise add karun?                                       | `src/config/env.js` ke Zod schema mein + `.env.example` mein dono jagah; config object se hi padho, `process.env` seedha nahi.                                                                                                                                                                                                         |
-| Naya route kaise add karun?                                         | `docs/modules/routing-and-http.md` -> "How to add a new route".                                                                                                                                                                                                                                                                        |
-| Naya phase khatam hone par kya update karun?                        | Tests + `docs/modules/<module>.md` + matrix rows (evidence ke saath) + **README**: status, TOC, Build Log (naya phase), structure, run/endpoints, verification, roadmap, glossary, FAQ, limitations.                                                                                                                                   |
-| `npm audit` moderate dikhata hai                                    | Sirf Jest ke dev-time dependency chain mein; `npm audit --omit=dev` = 0. Suggested `--force` fix Jest ko downgrade karta hai, isliye nahi lagaya.                                                                                                                                                                                      |
+| Problem                                                                                        | Wajah / fix                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server start nahi hota, `Invalid environment configuration`                                    | Env var galat hai (e.g. `PORT=abc`, `NODE_ENV=staging`). Message mein saari invalid fields listed hain. `.env` ya shell env theek karo.                                                                                                                                                                                                |
+| `EADDRINUSE`                                                                                   | Port pehle se use mein hai. `PORT` badlo ya purana process band karo (`lsof -i :3000`).                                                                                                                                                                                                                                                |
+| `.env` badalne par kuch nahi badla                                                             | `npm run dev` `.env` change par restart nahi karta; manually restart karo. Aur shell mein pehle se set env var `.env` ko override kar deta hai (dotenv override nahi karta).                                                                                                                                                           |
+| `npm test` par `ExperimentalWarning: VM Modules`                                               | Normal hai: Jest native ESM `--experimental-vm-modules` se chalta hai.                                                                                                                                                                                                                                                                 |
+| Test mein `jest is not defined`                                                                | ESM mein `jest` global nahi; `import { jest } from '@jest/globals'` karo.                                                                                                                                                                                                                                                              |
+| `GET /api/v1/auth/login` 404 kyun deta hai?                                                    | Module abhi khaali hai (Phase 7 mein bhara jayega). Fake endpoint nahi banate.                                                                                                                                                                                                                                                         |
+| `/api/v1/examples/*` production mein 404 kyun?                                                 | Teaching endpoints sirf `NODE_ENV !== 'production'` mein mount hote hain.                                                                                                                                                                                                                                                              |
+| `/notes/abc` par 400 kyun?                                                                     | `requireNumericParam('id')` route middleware positive integer maangta hai. Express 5 mein inline regex (`:id(\\d+)`) support nahi.                                                                                                                                                                                                     |
+| Tests mein logs kyun nahi dikhte?                                                              | `NODE_ENV=test` par `LOG_LEVEL` default `silent` hai. Dekhna ho to `LOG_LEVEL=debug npm test`, ya test mein `createLogCapture()` use karo.                                                                                                                                                                                             |
+| Mera `X-Request-Id` badal gaya                                                                 | Sirf `[A-Za-z0-9._-]{8,128}` accept hota hai; chhota/lamba/special chars wala ID replace hota hai (log injection se bachne ke liye).                                                                                                                                                                                                   |
+| Logs mein full URL/params kyun nahi dikhte?                                                    | Intentional: route pattern + request ID log hota hai; query/path-param values mein tokens ho sakte hain. Debug ke liye request ID se context dhundo.                                                                                                                                                                                   |
+| `app.get(...)` `createApp()` ke baad lagaya, 404 aa raha hai                                   | 404 handler pehle registered hai; late routes tak request pahunchti hi nahi. Route router ke andar add karo.                                                                                                                                                                                                                           |
+| Naya validated route kaise add karun?                                                          | `docs/modules/validation-and-api-contracts.md` ka "How to add a validated route": schema (`z.strictObject`) -> `router.x(path, validate({...}), handler)` -> handler `res.locals.valid` padhe -> manual verification (curl) likho.                                                                                                     |
+| `?limit=10abc` ya `?page=1&page=2` 400 kyun deta hai?                                          | Query values strict string patterns se check hoti hain (`z.coerce` nahi) aur repeated keys arrays banti hain jo string schema fail karte hain.                                                                                                                                                                                         |
+| Request mein extra field bhejne par 400 kyun?                                                  | Schemas `z.strictObject` hain; unknown field reject hota hai (mass-assignment se bachne ke liye). Naya field accept karna ho to schema mein add karo (non-breaking change).                                                                                                                                                            |
+| `sort=password` jaisi cheez kaise rokta hai?                                                   | Sort allowlist map hai (`{price: 'priceCents', ...}`) aur uska regex sirf allowed naam accept karta hai; DB column hamesha map se aata hai.                                                                                                                                                                                            |
+| `npm run dev` par server start hota hai par `/health/ready` 503 deta hai                       | MongoDB nahi chal raha ya `MONGODB_URI` galat. `npm run db:up` chalao (container healthy hone mein ~10-15s lagte hain) aur `docker compose ps` dekho. Server khud retry karta hai, restart nahi chahiye.                                                                                                                               |
+| `db:migrate` "MONGODB_URI is not set" deta hai                                                 | `cp .env.example .env` karo (scripts bhi `.env` padhte hain).                                                                                                                                                                                                                                                                          |
+| Transaction par "Transaction numbers are only allowed on a replica set member"                 | Plain mongod par transactions nahi chalte. `compose.yaml` ka replica set use karo aur URI mein `replicaSet=rs0&directConnection=true` rakho.                                                                                                                                                                                           |
+| Mongoose se write kiya to chal gaya par script se likhte hi `Document failed validation` (121) | Collection validators server par har write check karte hain (`src/db/models/validators.js`). Ye jaan-boojh ke hain: `$inc` ya raw script se negative stock jaisa data nahi ghus sakta.                                                                                                                                                 |
+| Naya index/validator kaise add karun?                                                          | Schema mein index likho aur ek **nayi migration** (`migrations/000N_...js`) jo `createIndex`/`collMod` chalaye. `autoIndex` band hai, isliye sirf schema badalne se index nahi banta.                                                                                                                                                  |
+| `findOneAndUpdate` par `new` option ka warning                                                 | Mongoose 9 mein `{ new: true }` ki jagah `{ returnDocument: 'after' }`.                                                                                                                                                                                                                                                                |
+| Naya error type kaise add karun?                                                               | `src/errors/app-errors.js` mein `AppError` extend karo (status + stable `code`), service/handler mein `throw` karo. Handler mein kuch nahi badalna. Detail: `docs/modules/error-handling.md`.                                                                                                                                          |
+| Production mein 500 par kuch detail kyun nahi milta?                                           | By design: client ko generic message. Asli error + stack server log mein `unexpected error` line (`level: 50`) mein hai; response header `X-Request-Id` se wo line dhundo.                                                                                                                                                             |
+| `asyncHandler`/try-catch kyun nahi?                                                            | Express 5 async handler ke throw aur rejected Promise ko khud error middleware tak bhejta hai. Express 4 mein wrapper chahiye hota tha.                                                                                                                                                                                                |
+| Mere `throw new Error('...')` ka message client ko kyun nahi dikha?                            | Plain `Error` unexpected maana jata hai (generic 500). Client ko message dikhana hai to matching `AppError` subclass throw karo.                                                                                                                                                                                                       |
+| `src/` ke code ke comments kis style mein likhne hain?                                         | Hinglish, English technical terms ke saath: file ka purpose, design/ordering ka reason, aur library ka behaviour jo naye developer ko na pata ho. Tests mein naye comments nahi likhte. Models: `env.js`, `server.js`, `app.js`. Comments add karne ke baad check karo ki code same hai (AST compare) aur lint/format/tests pass hain. |
+| Naya env var kaise add karun?                                                                  | `src/config/env.js` ke Zod schema mein + `.env.example` mein dono jagah; config object se hi padho, `process.env` seedha nahi.                                                                                                                                                                                                         |
+| Naya route kaise add karun?                                                                    | `docs/modules/routing-and-http.md` -> "How to add a new route".                                                                                                                                                                                                                                                                        |
+| Naya phase khatam hone par kya update karun?                                                   | Tests + `docs/modules/<module>.md` + matrix rows (evidence ke saath) + **README**: status, TOC, Build Log (naya phase), structure, run/endpoints, verification, roadmap, glossary, FAQ, limitations.                                                                                                                                   |
+| `npm audit` moderate dikhata hai                                                               | Sirf Jest ke dev-time dependency chain mein; `npm audit --omit=dev` = 0. Suggested `--force` fix Jest ko downgrade karta hai, isliye nahi lagaya.                                                                                                                                                                                      |
 
 ## 16. Docs index
 
-| Area                  | Where                                                                                                                                                                                                                                                                                                                                            |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Working rules         | [CLAUDE.md](CLAUDE.md)                                                                                                                                                                                                                                                                                                                           |
-| Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md)                                                                                                                                                                                                                                                                                   |
-| Phase plan            | [docs/architecture/phases.md](docs/architecture/phases.md)                                                                                                                                                                                                                                                                                       |
-| ADRs                  | [docs/architecture/decisions/](docs/architecture/decisions/README.md)                                                                                                                                                                                                                                                                            |
-| Module docs           | [docs/modules/](docs/modules/README.md) (abhi: [application-foundation](docs/modules/application-foundation.md), [routing-and-http](docs/modules/routing-and-http.md), [middleware](docs/modules/middleware.md), [error-handling](docs/modules/error-handling.md), [validation-and-api-contracts](docs/modules/validation-and-api-contracts.md)) |
-| Runbooks              | [docs/runbooks/](docs/runbooks/README.md)                                                                                                                                                                                                                                                                                                        |
-| Security              | [docs/security/](docs/security/README.md)                                                                                                                                                                                                                                                                                                        |
-| Test strategy         | [docs/testing/](docs/testing/README.md)                                                                                                                                                                                                                                                                                                          |
-| Concept matrix        | [docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md)                                                                                                                                                                                                                                                               |
+| Area                  | Where                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Working rules         | [CLAUDE.md](CLAUDE.md)                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md)                                                                                                                                                                                                                                                                                                                                                         |
+| Phase plan            | [docs/architecture/phases.md](docs/architecture/phases.md)                                                                                                                                                                                                                                                                                                                                                             |
+| ADRs                  | [docs/architecture/decisions/](docs/architecture/decisions/README.md)                                                                                                                                                                                                                                                                                                                                                  |
+| Module docs           | [docs/modules/](docs/modules/README.md) (abhi: [application-foundation](docs/modules/application-foundation.md), [routing-and-http](docs/modules/routing-and-http.md), [middleware](docs/modules/middleware.md), [error-handling](docs/modules/error-handling.md), [validation-and-api-contracts](docs/modules/validation-and-api-contracts.md), [database-and-persistence](docs/modules/database-and-persistence.md)) |
+| Runbooks              | [docs/runbooks/](docs/runbooks/README.md)                                                                                                                                                                                                                                                                                                                                                                              |
+| Security              | [docs/security/](docs/security/README.md)                                                                                                                                                                                                                                                                                                                                                                              |
+| Test strategy         | [docs/testing/](docs/testing/README.md)                                                                                                                                                                                                                                                                                                                                                                                |
+| Concept matrix        | [docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md)                                                                                                                                                                                                                                                                                                                                     |

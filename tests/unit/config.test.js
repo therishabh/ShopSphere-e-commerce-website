@@ -11,6 +11,7 @@ describe('loadConfig', () => {
       host: '127.0.0.1',
       port: 3000,
       logLevel: 'info',
+      dbPoolMax: 10,
     });
   });
 
@@ -20,7 +21,10 @@ describe('loadConfig', () => {
 
   test('log level defaults by environment and can be overridden', () => {
     expect(loadConfig({ NODE_ENV: 'test' }).logLevel).toBe('silent');
-    expect(loadConfig({ NODE_ENV: 'production' }).logLevel).toBe('info');
+    expect(
+      loadConfig({ NODE_ENV: 'production', MONGODB_URI: 'mongodb://localhost:27017/test' })
+        .logLevel,
+    ).toBe('info');
     expect(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'debug' }).logLevel).toBe('debug');
   });
 

@@ -21,7 +21,7 @@ function assertMatchesContract(schemasByStatus, res) {
 }
 
 const BASE = '/api/v1/examples/validation/demo-products';
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/;
 
 const makeApp = () => createApp({ config: loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' }) });
 
@@ -242,7 +242,7 @@ describe('GET demo-products/:productId', () => {
   });
 
   test('well-formed but unknown id -> 404 NOT_FOUND', async () => {
-    const res = await request(makeApp()).get(`${BASE}/3f2b8c1e-6a4d-4e0b-9c1a-2b7d5e8f9a10`);
+    const res = await request(makeApp()).get(`${BASE}/65f0a1b2c3d4e5f607182930`);
     assertMatchesContract(getDemoProduct, res);
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
@@ -274,7 +274,7 @@ describe('POST demo-products', () => {
     assertMatchesContract(createDemoProduct, res);
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject(validProduct);
-    expect(res.body.id).toMatch(UUID_PATTERN);
+    expect(res.body.id).toMatch(OBJECT_ID_PATTERN);
     expect(Number.isNaN(Date.parse(res.body.createdAt))).toBe(false);
     expect(res.headers.location).toBe(`${BASE}/${res.body.id}`);
 

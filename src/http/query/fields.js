@@ -48,3 +48,14 @@ export function slug({ max = 60 } = {}) {
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'must be a lowercase slug like "home-decor"')
     .meta({ description: 'Lowercase slug, e.g. home-decor' });
 }
+
+/**
+ * MongoDB ObjectId ka string roop: 24 hex characters (e.g. 65f0a1b2c3d4e5f607182930).
+ * Path params mein id aise validate hoti hai: galat format database tak jaata hi nahi (Mongoose CastError ki zarurat nahi).
+ */
+export function objectId() {
+  return z
+    .string()
+    .regex(/^[0-9a-fA-F]{24}$/, 'must be a 24-character hex id')
+    .meta({ description: 'MongoDB ObjectId (24 hex characters)' });
+}

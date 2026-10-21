@@ -137,3 +137,18 @@ export class InternalError extends AppError {
     });
   }
 }
+
+// 503: koi zaruri dependency (jaise database) abhi available nahi (connection refused, timeout, pool band...).
+// Ye hamari taraf ki infra problem hai (client ki galti nahi), isliye isOperational=false: logs mein `error` level
+// par dikhti hai aur investigate karni padti hai. Client ko generic message + Retry-After milta hai.
+export class ServiceUnavailableError extends AppError {
+  constructor({ cause, retryAfterSeconds = 5 } = {}) {
+    super('Service temporarily unavailable', {
+      statusCode: 503,
+      code: 'SERVICE_UNAVAILABLE',
+      cause,
+      isOperational: false,
+      headers: { 'Retry-After': String(retryAfterSeconds) },
+    });
+  }
+}

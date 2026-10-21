@@ -6,12 +6,12 @@ Single source of truth for what is actually done. Every concept named in the [pl
 
 1. **No concept is complete until all evidence exists:** implementation/demo, automated test or repeatable verification, focused documentation, and exact paths/commands for each.
 2. Statuses advance one step at a time, only on evidence: `planned → in progress → implemented → tested → documented → verified`.
-3. `verified` means the checks were actually run and passed. Environment-dependent checks (Postgres, Redis, Docker, MongoDB) are noted in the test column and not marked verified when unrun.
+3. `verified` means the checks were actually run and passed. Environment-dependent checks (MongoDB, Redis, Docker) are noted in the test column and not marked verified when unrun.
 4. Use exact repo-relative paths (and the command, if not a plain test file) in the location columns. `—` means no evidence yet.
 5. Documentation links point to the page the owning phase will create; a link is valid only after that phase lands.
 6. Phase 24 audits every row. Phase 25 must not report "all concepts complete" unless every row is `verified`.
 
-**Current state: Phase 5 complete except OpenAPI/Swagger. Sections 1–4 are `verified`; section 5 is `verified` except "OpenAPI spec" and "Swagger UI" (built on branch `feature/openapi-swagger`, to be merged later); every other concept is `planned`.**
+**Current state: Phase 6 complete. Sections 1–4 are `verified`; section 5 is `verified` except "OpenAPI spec" and "Swagger UI" (built on branch `feature/openapi-swagger`, to be merged later); section 6 is `verified` except "Test database isolation" (strategy documented, no tests written); every other concept is `planned`.**
 
 Note: the `/health/ready` row is verified against fake dependency checks; the database-backed check is tracked under Persistence (Phase 6).
 
@@ -98,18 +98,19 @@ Note: the `/health/ready` row is verified against fake dependency checks; the da
 
 | Concept | Implementation / demo | Test / verification | Documentation | Status |
 | --- | --- | --- | --- | --- |
-| PostgreSQL + Prisma schema | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
-| Migrations | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
-| Seed data | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
-| Database connection module | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
-| Readiness integration | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
-| Repository pattern | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
-| Transaction helpers | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
-| Foreign keys, uniqueness, indexes, status enums | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
-| Test database isolation | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
-| Idempotency records table | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
-| Audit events table | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
-| Outbox table | — | — | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
+| Mongoose schemas/models (validation, enums, timestamps) | `src/db/models/*.models.js`, `enums.js`, `shared.js` (15 models, strict, enums, timestamps) | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): enum/required/min/max rejected, unknown field throws, values not echoed in errors | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
+| Versioned migrations (collections + indexes) | `src/db/migrations.js`, `migrations/0001_collections_validators_and_indexes.js`, `scripts/db.js` | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): `db:migrate` applies once, second run no-op, `db:status` | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
+| Seed data | `src/db/seed.js` (`npm run db:seed`) | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): idempotent: identical counts after two runs | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
+| Database connection module (pool, timeouts) | `src/db/database.js` (pool, timeouts, retry connect, no autoIndex) | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): boot with MongoDB down serves 503 then recovers; SIGTERM exits; no URI in logs | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
+| Readiness integration | `src/server.js` (`db` check), `src/db/database.js` (`checkReady`) | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): up 200, stopped 503 (live stays 200), restart recovers without restart of app | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
+| Repository pattern | `src/db/repositories/*.js` (users, categories, products, audit, outbox, sequences) | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): normalized Phase 5 query -> Mongo (filters, sort, pagination, search), passwordHash hidden, regex-escaped search | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
+| Transaction helpers (replica set) | `src/db/database.js` (`transaction`), `compose.yaml` (single-node replica set) | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): commit writes 3 documents, rollback writes none, conflicting transactions retried, atomic stock reservation | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
+| Uniqueness, partial/TTL indexes and status enums | `src/db/models/*.models.js` indexes, `src/db/models/validators.js` (server-side validators) | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): 19 constraint checks (121 validator failures, 11000 duplicates, partial indexes allow/deny correctly) | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
+| Test database isolation | strategy documented in [database-and-persistence.md](../modules/database-and-persistence.md) ("Test database strategy") | none: no tests are written (owner's decision) | [database-and-persistence.md](../modules/database-and-persistence.md) | planned |
+| Idempotency records collection | `src/db/models/reliability.models.js` (unique (userId, scope, key), TTL) | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): collection, unique and TTL indexes created by migration 0001 | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
+| Audit events collection | `src/db/models/reliability.models.js`, `src/db/repositories/audit.repository.js` | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): commit writes an event; secret-like metadata keys (nested too) rejected | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
+| Outbox collection | `src/db/models/reliability.models.js`, `src/db/repositories/outbox.repository.js` | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): enqueue joins the transaction (rolled back with it), findDue returns pending, partial index | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
+| Mongo error mapping (duplicate key, validation, cast, connectivity) | `src/db/map-database-error.js` (called by `src/errors/to-app-error.js`) | manual verification in [database-and-persistence.md](../modules/database-and-persistence.md) ("Manual verification"): 409 duplicate/validator/conflict, 404 orFail, 400 validation+cast, 500 strict mode, 503 down/timeout | [database-and-persistence.md](../modules/database-and-persistence.md) | verified |
 
 ## 7. Authentication (Phase 7)
 
@@ -187,7 +188,7 @@ Note: the `/health/ready` row is verified against fake dependency checks; the da
 | Body-size limits | — | — | [security.md](../modules/security.md) | planned |
 | Secure cookies | — | — | [security.md](../modules/security.md) | planned |
 | `trust proxy` configuration | — | — | [security.md](../modules/security.md) | planned |
-| SQL/NoSQL injection review | — | — | [security.md](../modules/security.md) | planned |
+| NoSQL operator injection and regex/ReDoS review | — | — | [security.md](../modules/security.md) | planned |
 | XSS (output escaping) | — | — | [security.md](../modules/security.md) | planned |
 | Open redirect prevention | — | — | [security.md](../modules/security.md) | planned |
 | Path traversal prevention | — | — | [security.md](../modules/security.md) | planned |
@@ -315,7 +316,7 @@ Note: the `/health/ready` row is verified against fake dependency checks; the da
 | Concept | Implementation / demo | Test / verification | Documentation | Status |
 | --- | --- | --- | --- | --- |
 | Multi-stage Dockerfile | — | — | [deployment.md](../runbooks/deployment.md) | planned |
-| Docker Compose (app, Postgres, Redis, worker) | — | — | [deployment.md](../runbooks/deployment.md) | planned |
+| Docker Compose (app, MongoDB replica set, Redis, worker) | — | — | [deployment.md](../runbooks/deployment.md) | planned |
 | Nginx reverse proxy | — | — | [deployment.md](../runbooks/deployment.md) | planned |
 | Production config checklist | — | — | [deployment.md](../runbooks/deployment.md) | planned |
 | `worker_threads` CPU lab | — | — | [deployment.md](../runbooks/deployment.md) | planned |
@@ -347,15 +348,13 @@ Note: the `/health/ready` row is verified against fake dependency checks; the da
 | Express 4 vs 5 async rejection (`labs/express-v4-compat`) | — | — | [express-concept-lab.md](../modules/express-concept-lab.md) | planned |
 | Debug routes disabled in production | — | — | [express-concept-lab.md](../modules/express-concept-lab.md) | planned |
 
-## 22. Mongoose lab (Phase 22)
+## 22. MongoDB features lab (Phase 22)
 
 | Concept | Implementation / demo | Test / verification | Documentation | Status |
 | --- | --- | --- | --- | --- |
-| Mongoose schemas/models | — | — | [mongoose-lab.md](../modules/mongoose-lab.md) | planned |
-| Mongoose validation | — | — | [mongoose-lab.md](../modules/mongoose-lab.md) | planned |
-| CRUD | — | — | [mongoose-lab.md](../modules/mongoose-lab.md) | planned |
-| Indexes | — | — | [mongoose-lab.md](../modules/mongoose-lab.md) | planned |
-| Query filtering/pagination | — | — | [mongoose-lab.md](../modules/mongoose-lab.md) | planned |
-| Duplicate-key errors | — | — | [mongoose-lab.md](../modules/mongoose-lab.md) | planned |
-| Connection failure handling | — | — | [mongoose-lab.md](../modules/mongoose-lab.md) | planned |
-| Isolation from core app and core tests | — | — | [mongoose-lab.md](../modules/mongoose-lab.md) | planned |
+| Aggregation pipelines (reports) | — | — | [mongodb-lab.md](../modules/mongodb-lab.md) | planned |
+| TTL indexes | — | — | [mongodb-lab.md](../modules/mongodb-lab.md) | planned |
+| Text and partial indexes with `explain()` | — | — | [mongodb-lab.md](../modules/mongodb-lab.md) | planned |
+| Change streams | — | — | [mongodb-lab.md](../modules/mongodb-lab.md) | planned |
+| `$jsonSchema` collection validators | — | — | [mongodb-lab.md](../modules/mongodb-lab.md) | planned |
+| Isolation from the core app | — | — | [mongodb-lab.md](../modules/mongodb-lab.md) | planned |

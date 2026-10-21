@@ -41,6 +41,7 @@ const PUBLIC_DIR = path.join(import.meta.dirname, '..', 'public');
  * @param {object} options.config loadConfig() se aaya validated config
  * @param {object} [options.readiness] readiness tracker; default: bina kisi dependency check ke wala
  * @param {object} [options.logger] pino logger; default: config.logLevel se bana hua
+ * @param {object} [options.database] createDatabase() ka result (ho to); routes/services isse `req.app.locals.database` se lete hain
  *
  * `readiness` aur `logger` parameters isliye hain ki tests apne fake/capture wale pass kar sakein.
  */
@@ -48,6 +49,7 @@ export function createApp({
   config,
   readiness = createReadiness(),
   logger = createLogger({ level: config.logLevel }),
+  database,
 }) {
   const app = express();
 
@@ -57,6 +59,8 @@ export function createApp({
   // `app.locals` = poori app ke liye shared (read-only jaisa) store.
   // Kisi bhi handler/router mein `req.app.locals.config` se config mil jata hai, import kiye bina.
   app.locals.config = config;
+  // Database handle (ho to): repositories aur transaction helper. Abhi routes use nahi karte; aane wale modules karenge.
+  app.locals.database = database;
 
   // 1. Request ID sabse pehle: iske baad ka sab kuch (logs, errors, handlers) is ID ko use kar sakta hai.
   //    Agar ye baad mein hota to logger ko ID milti hi nahi.

@@ -1,13 +1,13 @@
 // Products module ke DTO (Data Transfer Object) schemas: API ke through jo data aata/jaata hai uska shape.
 //
 // DTO strategy: request schemas (query/params/body) aur response schema yahin define hote hain, database model
-// (Prisma, Phase 6) se alag. Isse API contract database ke badlav se bandha nahi rehta: DB column rename ho to
+// (Mongoose models, src/db/models) se alag. Isse API contract database ke badlav se bandha nahi rehta: field rename ho to
 // bhi API same rehti hai, bas mapping badalti hai. Abhi inka use sirf validation demo (src/examples/) mein hai;
 // asli products endpoints Phase 9 mein inhi schemas se bante hain.
 
 import { z } from 'zod';
 import { buildListQuerySchema } from '../../http/query/list-query.js';
-import { booleanString, intString, slug } from '../../http/query/fields.js';
+import { booleanString, intString, objectId, slug } from '../../http/query/fields.js';
 import { listResponseSchema } from '../../http/schemas.js';
 
 // Money hamesha integer "minor units" (paise/cents) mein: 49900 = 499.00 INR. Float se paisa kabhi nahi
@@ -57,10 +57,10 @@ export const productListQuerySchema = buildListQuerySchema({
   },
 });
 
-// /products/:productId ka param: UUID. (Database IDs ke baare mein final decision Phase 6 mein; UUID isliye ki
-// predictable sequential IDs se enumeration (id=1,2,3...) nahi hoti.)
+// /products/:productId ka param: MongoDB ObjectId (24 hex chars). Format yahin check ho jaata hai, isliye galat id database
+// tak jaati hi nahi.
 export const productIdParamsSchema = z.strictObject({
-  productId: z.uuid().meta({ description: 'Product ID (UUID)' }),
+  productId: objectId(),
 });
 
 // POST /products ki body. strictObject = koi extra field (e.g. `id`, `status`, `sellerId`, `role`) allowed nahi:
@@ -86,7 +86,7 @@ export const createProductBodySchema = z.strictObject({
 
 // Response DTO: client ko product kaisa dikhta hai.
 export const productSchema = z.object({
-  id: z.uuid(),
+  id: objectId(),
   sku: z.string(),
   name: z.string(),
   description: z.string().optional(),

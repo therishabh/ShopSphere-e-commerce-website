@@ -2,7 +2,7 @@
 //
 // Kyun: har list endpoint (products, orders, users...) mein ye cheezein baar-baar chahiye. Yahan ek baar
 // strict, allowlist-based schema ban jaata hai; har module sirf apni allowlist/filters deta hai.
-// Output "normalized query" hota hai jise seedha repository (Prisma) ko diya ja sakta hai:
+// Output "normalized query" hota hai jise seedha repository (Mongoose query) ko diya ja sakta hai:
 //   { page, limit, offset, sort: [{ field, column, direction }], q?, filters: {...} }
 
 import { z } from 'zod';

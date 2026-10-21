@@ -12,6 +12,7 @@ import { loadConfig, ConfigError } from './config/env.js';
 import { createApp } from './app.js';
 import { createReadiness } from './health/readiness.js';
 import { createLogger } from './logging/logger.js';
+import { createDatabase } from './db/database.js';
 
 /**
  * App banata hai, port par sunna shuru karta hai, aur jab port sach mein bind ho jaye tab resolve hota hai.
@@ -20,13 +21,27 @@ import { createLogger } from './logging/logger.js';
  *
  * `readiness` aur `logger` optional hain (default bana lete hain), taaki tests apne fake/capture wale
  * pass kar sakein. Ye "dependency injection" ka chhota roop hai.
+ *
+ * Database: `config.mongodbUri` set ho to yahan connection banta hai (background mein, retry ke saath: DB abhi down ho to
+ * bhi server start hota hai), readiness mein `db` check judta hai (DB down = /health/ready 503), aur close() mein sabse
+ * aakhir mein connections band hote hain. Set na ho (dev/test) to app database ke bina chalti hai aur ek warning log hoti hai.
  */
 export async function startServer(
   config,
-  { readiness = createReadiness(), logger = createLogger({ level: config.logLevel }) } = {},
+  {
+    logger = createLogger({ level: config.logLevel }),
+    database = config.mongodbUri
+      ? createDatabase({ uri: config.mongodbUri, poolMax: config.dbPoolMax, logger })
+      : undefined,
+    readiness = createReadiness({ checks: database ? { db: () => database.checkReady() } : {} }),
+  } = {},
 ) {
+  if (!database && config.env !== 'test') {
+    logger.warn('MONGODB_URI is not set: running without a database (readiness has no db check)');
+  }
+
   // App yahan sirf *banta* hai; abhi tak koi port nahi khula.
-  const app = createApp({ config, readiness, logger });
+  const app = createApp({ config, readiness, logger, database });
 
   // `app.listen()` turant server object return kar deta hai, lekin port asal mein thodi der baad
   // bind hota hai. Do events mein se koi ek aayega:
@@ -38,7 +53,20 @@ export async function startServer(
     const s = app.listen(config.port, config.host);
     s.once('listening', () => resolve(s));
     s.once('error', reject);
+  }).catch(async (err) => {
+    // Port bind nahi hua: database connection khula reh jaata aur process atak sakta tha, isliye pehle band karo.
+    await database?.disconnect();
+    throw err;
   });
+
+  // DB connect background mein (await nahi): server ko DB ke wait mein nahi rokte. Fail hone par database module khud
+  // retry karta hai aur tab tak readiness 503 deti hai. (`.catch`: connect() kabhi reject nahi karta retry mode mein,
+  // phir bhi unhandled rejection se bachne ke liye.)
+  database
+    ?.connect()
+    .catch((err) =>
+      logger.error({ errName: err.name, errMessage: err.message }, 'mongodb connect aborted'),
+    );
 
   // Server ko band karne ka sahi order:
   async function close() {
@@ -55,10 +83,13 @@ export async function startServer(
       //    request chal rahi hai wo apna response poora karke hi band hote hain.
       server.closeIdleConnections();
     });
+
+    // 4. Sabse aakhir mein database connections band (HTTP requests khatam ho chuki hain, ab koi query nahi aayegi).
+    await database?.disconnect();
   }
 
   // `server.address().port` isliye: agar PORT=0 diya (OS koi free port chune), to asli port yahin milta hai.
-  return { server, close, port: server.address().port, logger };
+  return { server, close, port: server.address().port, logger, database };
 }
 
 async function main() {
