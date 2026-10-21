@@ -26,7 +26,7 @@ Phase 3 added request ID, request logger and security headers before everything 
 
 - One folder per module: `src/modules/<name>/<name>.routes.js` exporting `create<Name>Router()`.
 - `src/routes/api.routes.js` is the only place that knows the prefixes: `/api/v1/{auth,users,sellers,products,cart,orders,admin}`.
-- The seven module routers are **valid, mounted and empty**. They reserve the URL space and expose no endpoints, so `GET /api/v1/auth/login` is a 404 until Phase 7.
+- The seven module routers are **valid and mounted**. Six are empty; `auth` has real endpoints once a database is configured (empty otherwise). They reserve the URL space and expose no endpoints, so `GET /api/v1/auth/login` is a 404 until Phase 7.
 - Shared route middleware lives in `src/http/route-guards.js` (`requireJson`, `requireUrlEncoded`, `requireNumericParam`, `methodNotAllowed`).
 
 ## Endpoint naming

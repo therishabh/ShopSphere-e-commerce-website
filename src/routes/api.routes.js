@@ -14,6 +14,10 @@ import { createAdminRouter } from '../modules/admin/admin.routes.js';
 // Teaching examples: sirf seekhne/demo ke liye, production mein mount nahi hote.
 import { createHttpExamplesRouter } from '../examples/http-examples.routes.js';
 import { createMiddlewareExamplesRouter } from '../examples/middleware-examples.routes.js';
+import { createMailboxExamplesRouter } from '../examples/mailbox-examples.routes.js';
+// Auth module (database ho tabhi asli endpoints) aur test mailer (abhi ke liye email delivery).
+import { createAuthModule } from '../modules/auth/index.js';
+import { createTestMailer } from '../email/test-mailer.js';
 import { createErrorExamplesRouter } from '../examples/error-examples.routes.js';
 import { createValidationExamplesRouter } from '../examples/validation-examples.routes.js';
 
@@ -28,8 +32,10 @@ export const BODY_LIMIT = '100kb';
  *   3. teaching examples (sirf non-production mein)
  * Jo request yahan match nahi hoti wo app-level 404 handler tak jaati hai.
  */
-export function createApiRouter({ config }) {
+export function createApiRouter({ config, database, logger }) {
   const api = Router();
+  // Emails ke liye abhi sirf test mailer (memory mein jama). Asli provider adapter baad mein isi jagah lagega.
+  const mailer = createTestMailer({ logger });
 
   // Parsers routes se PEHLE hone chahiye, warna handler ko `req.body` khaali milega.
   // express.json: `Content-Type: application/json` wali body ko JS object banata hai (req.body).
@@ -39,7 +45,12 @@ export function createApiRouter({ config }) {
   api.use(express.urlencoded({ extended: false, limit: BODY_LIMIT }));
 
   // Har feature ka router apne prefix par mount hota hai: e.g. /api/v1/auth/...
-  api.use('/auth', createAuthRouter());
+  // Auth ko users/tokens store karne ke liye database chahiye. Database nahi hai (tests, ya MONGODB_URI set nahi) to auth khaali
+  // router rehta hai: koi fake endpoint nahi, request seedha 404.
+  api.use(
+    '/auth',
+    database ? createAuthModule({ config, database, logger, mailer }).router : createAuthRouter(),
+  );
   api.use('/users', createUsersRouter());
   api.use('/sellers', createSellersRouter());
   api.use('/products', createProductsRouter());
@@ -51,6 +62,7 @@ export function createApiRouter({ config }) {
   if (config.env !== 'production') {
     // Zyada specific prefixes pehle mount karo: '/examples/middleware' ko '/examples' se pehle,
     // warna '/examples' wala router unke requests pehle pakad leta.
+    api.use('/examples/mailbox', createMailboxExamplesRouter(mailer));
     api.use('/examples/middleware', createMiddlewareExamplesRouter());
     api.use('/examples/errors', createErrorExamplesRouter());
     api.use('/examples/validation', createValidationExamplesRouter());

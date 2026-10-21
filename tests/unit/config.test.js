@@ -12,6 +12,11 @@ describe('loadConfig', () => {
       port: 3000,
       logLevel: 'info',
       dbPoolMax: 10,
+      auth: {
+        appBaseUrl: 'http://localhost:3000',
+        accessTokenTtlSeconds: 900,
+        refreshTokenTtlDays: 30,
+      },
     });
   });
 
@@ -22,8 +27,12 @@ describe('loadConfig', () => {
   test('log level defaults by environment and can be overridden', () => {
     expect(loadConfig({ NODE_ENV: 'test' }).logLevel).toBe('silent');
     expect(
-      loadConfig({ NODE_ENV: 'production', MONGODB_URI: 'mongodb://localhost:27017/test' })
-        .logLevel,
+      loadConfig({
+        NODE_ENV: 'production',
+        MONGODB_URI: 'mongodb://localhost:27017/test',
+        AUTH_JWT_SECRET: 'x'.repeat(32),
+        APP_BASE_URL: 'https://shop.example.com',
+      }).logLevel,
     ).toBe('info');
     expect(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'debug' }).logLevel).toBe('debug');
   });

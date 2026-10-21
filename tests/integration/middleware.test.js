@@ -14,7 +14,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function makeApp(env = 'test') {
   const capture = createLogCapture();
-  const config = loadConfig({ NODE_ENV: env, MONGODB_URI: 'mongodb://localhost:27017/test' });
+  const config = loadConfig({
+    NODE_ENV: env,
+    MONGODB_URI: 'mongodb://localhost:27017/test',
+    AUTH_JWT_SECRET: 'x'.repeat(32),
+    APP_BASE_URL: 'https://shop.example.com',
+  });
   return { app: createApp({ config, logger: capture.logger }), config, ...capture };
 }
 

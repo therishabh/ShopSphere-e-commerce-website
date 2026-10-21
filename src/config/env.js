@@ -46,6 +46,24 @@ const schema = z.object({
   // Database connection pool ka maximum size (ek app instance kitne connections khol sakta hai).
   // MongoDB server ki apni connection limit hoti hai; instances x poolMax us se kam rakhna.
   DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
+
+  // --- Authentication (Phase 7)
+  // Access token (JWT) ko sign karne ka secret. Kam se kam 32 characters (HS256 ke liye lamba random secret).
+  // Banane ka tareeka: node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+  // Isko kabhi log/commit mat karo. Production mein required (neeche); dev mein na ho to har startup par naya random secret
+  // banta hai (restart par purane tokens invalid ho jaate hain).
+  AUTH_JWT_SECRET: z.string().min(32, 'must be at least 32 characters').optional(),
+
+  // Frontend ka base URL: verification/reset email ke links isi se bante hain (e.g. https://shop.example.com/reset-password?token=...).
+  // Trailing slash neeche hata dete hain. Production mein https:// zaruri.
+  APP_BASE_URL: z.url().default('http://localhost:3000'),
+
+  // Access token kitni der valid rahega (seconds). Chhota rakhte hain, kyunki access token ko revoke nahi kar sakte
+  // (stateless): chori hone par nuksaan itni der tak hi.
+  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
+
+  // Refresh token kitne din valid (har use par naya token milta hai, ye "sliding" nahi balki har token ki apni age hai).
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
 });
 
 // Config galat hone par ye custom error throw hota hai.
@@ -80,12 +98,29 @@ export function loadConfig(env = process.env) {
   }
 
   // Yahan tak aaye matlab saari values valid hain. `data` mein PORT ab number hai, string nahi.
-  const { NODE_ENV, HOST, PORT, LOG_LEVEL, MONGODB_URI, DB_POOL_MAX } = result.data;
+  const {
+    NODE_ENV,
+    HOST,
+    PORT,
+    LOG_LEVEL,
+    MONGODB_URI,
+    DB_POOL_MAX,
+    AUTH_JWT_SECRET,
+    APP_BASE_URL,
+    ACCESS_TOKEN_TTL_SECONDS,
+    REFRESH_TOKEN_TTL_DAYS,
+  } = result.data;
 
   // Production mein database ke bina app chalana galti hai (fail-fast). Dev/test mein optional hai: DB-based features
   // abhi ke routes mein use nahi hote, aur tests ko database ki zarurat nahi.
-  if (NODE_ENV === 'production' && !MONGODB_URI) {
-    throw new ConfigError(['MONGODB_URI: required when NODE_ENV=production']);
+  if (NODE_ENV === 'production') {
+    const problems = [];
+    if (!MONGODB_URI) problems.push('MONGODB_URI: required when NODE_ENV=production');
+    if (!AUTH_JWT_SECRET) problems.push('AUTH_JWT_SECRET: required when NODE_ENV=production');
+    // Production mein links https:// par hone chahiye (token wala link plain http par sniff ho sakta hai).
+    if (!APP_BASE_URL.startsWith('https://'))
+      problems.push('APP_BASE_URL: must use https:// when NODE_ENV=production');
+    if (problems.length > 0) throw new ConfigError(problems);
   }
 
   // LOG_LEVEL diya hai to wahi; nahi diya to tests mein 'silent' (output saaf rahe), baaki jagah 'info'.
@@ -102,5 +137,12 @@ export function loadConfig(env = process.env) {
     logLevel,
     mongodbUri: MONGODB_URI,
     dbPoolMax: DB_POOL_MAX,
+    // Authentication ki settings ek group mein. jwtSecret undefined ho sakta hai (dev/test).
+    auth: Object.freeze({
+      jwtSecret: AUTH_JWT_SECRET,
+      appBaseUrl: APP_BASE_URL.replace(/\/+$/, ''),
+      accessTokenTtlSeconds: ACCESS_TOKEN_TTL_SECONDS,
+      refreshTokenTtlDays: REFRESH_TOKEN_TTL_DAYS,
+    }),
   });
 }

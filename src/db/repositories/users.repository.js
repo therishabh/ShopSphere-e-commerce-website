@@ -34,6 +34,24 @@ export function createUserRepository({ User }) {
       );
     },
 
+    /** Naya password hash (reset ke baad ya rehash par). Document nahi mila to 404. */
+    async setPasswordHash(id, passwordHash) {
+      await User.findByIdAndUpdate(id, { passwordHash }, { runValidators: true }).orFail();
+    },
+
+    /**
+     * Email verified mark karta hai aur PENDING_VERIFICATION se ACTIVE banata hai. Sirf pending user par chalta hai
+     * (DISABLED user is raaste se wapas ACTIVE nahi ho sakta). @returns updated user ya null (pending nahi tha)
+     */
+    async markEmailVerified(id) {
+      const user = await User.findOneAndUpdate(
+        { _id: id, status: 'PENDING_VERIFICATION' },
+        { $set: { status: 'ACTIVE', emailVerifiedAt: new Date() } },
+        { returnDocument: 'after', runValidators: true },
+      ).lean();
+      return serialize(user);
+    },
+
     /** Document nahi mila to DocumentNotFoundError throw hota hai -> 404. */
     async updateStatus(id, status) {
       const user = await User.findByIdAndUpdate(

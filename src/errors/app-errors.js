@@ -65,9 +65,10 @@ export class AuthenticationError extends AppError {
 }
 
 // 403: aap kaun ho pata hai, lekin ye karne ki permission nahi. Authorization ki failure.
+// `code` override ho sakta hai jab client ko alag pehchan chahiye (e.g. 'EMAIL_NOT_VERIFIED', 'ACCOUNT_DISABLED').
 export class AuthorizationError extends AppError {
-  constructor(message = 'Forbidden', options = {}) {
-    super(message, { ...options, statusCode: 403, code: 'FORBIDDEN' });
+  constructor(message = 'Forbidden', { code = 'FORBIDDEN', ...options } = {}) {
+    super(message, { ...options, statusCode: 403, code });
   }
 }
 

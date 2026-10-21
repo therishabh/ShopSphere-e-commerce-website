@@ -1,14 +1,50 @@
-// Auth module ke routes. Abhi jaan-boojh kar khaali hai.
-// Module mounted hai (src/routes/api.routes.js mein /api/v1/auth par), isliye URL space reserved hai,
-// lekin jab tak iska phase implement nahi hota koi endpoint expose nahi hota: fake endpoint banane se
-// behtar hai ki request seedha 404 par jaye. Endpoints yahan aayenge: router.get/post(...).
-import { Router } from 'express';
+// Auth ke routes (`/api/v1/auth/...`).
+//
+// Do shapes hain:
+//   - createAuthRouter()              -> khaali router. Jab database configure nahi hai (auth ko users/tokens store karne hain),
+//                                        module mounted rehta hai par koi endpoint nahi deta (fake endpoint nahi).
+//   - createAuthRouter({ controller, authenticate }) -> asli endpoints.
 
-/**
- * Auth routes. Intentionally empty: the module is mounted so the URL space is
- * reserved and wired, but it exposes no endpoints until its phase implements them.
- */
-export function createAuthRouter() {
-  // Khaali Router: koi route register nahi, isliye har request aage ke 404 handler tak chali jaati hai.
-  return Router();
+import { Router } from 'express';
+import { validate } from '../../http/validate.js';
+import {
+  emailOnlyBody,
+  loginBody,
+  logoutBody,
+  refreshBody,
+  resetPasswordBody,
+  signupBody,
+  verifyEmailBody,
+} from './auth.schemas.js';
+
+// Auth responses mein tokens hote hain: browser/proxy/CDN ko cache karne se mana.
+function noStore(_req, res, next) {
+  res.set('Cache-Control', 'no-store');
+  res.set('Pragma', 'no-cache');
+  next();
+}
+
+export function createAuthRouter(deps) {
+  const router = Router();
+  if (!deps) return router;
+
+  const { controller, authenticate } = deps;
+  router.use(noStore);
+
+  router.post('/signup', validate({ body: signupBody }), controller.signup);
+  router.post('/login', validate({ body: loginBody }), controller.login);
+  router.post('/refresh', validate({ body: refreshBody }), controller.refresh);
+  router.post('/logout', validate({ body: logoutBody }), controller.logout);
+  router.post('/logout-all', authenticate, controller.logoutAll);
+  router.get('/me', authenticate, controller.me);
+  router.post('/verify-email', validate({ body: verifyEmailBody }), controller.verifyEmail);
+  router.post(
+    '/resend-verification',
+    validate({ body: emailOnlyBody }),
+    controller.resendVerification,
+  );
+  router.post('/forgot-password', validate({ body: emailOnlyBody }), controller.forgotPassword);
+  router.post('/reset-password', validate({ body: resetPasswordBody }), controller.resetPassword);
+
+  return router;
 }

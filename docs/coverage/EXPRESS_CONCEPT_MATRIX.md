@@ -11,7 +11,7 @@ Single source of truth for what is actually done. Every concept named in the [pl
 5. Documentation links point to the page the owning phase will create; a link is valid only after that phase lands.
 6. Phase 24 audits every row. Phase 25 must not report "all concepts complete" unless every row is `verified`.
 
-**Current state: Phase 6 complete. Sections 1–4 are `verified`; section 5 is `verified` except "OpenAPI spec" and "Swagger UI" (built on branch `feature/openapi-swagger`, to be merged later); section 6 is `verified` except "Test database isolation" (strategy documented, no tests written); every other concept is `planned`.**
+**Current state: Phase 7 complete. Sections 1–4 are `verified`; section 5 is `verified` except "OpenAPI spec" and "Swagger UI" (built on branch `feature/openapi-swagger`, to be merged later); section 6 is `verified` except "Test database isolation" (strategy documented, no tests written); section 7 is `verified`; every other concept is `planned`.**
 
 Note: the `/health/ready` row is verified against fake dependency checks; the database-backed check is tracked under Persistence (Phase 6).
 
@@ -116,18 +116,18 @@ Note: the `/health/ready` row is verified against fake dependency checks; the da
 
 | Concept | Implementation / demo | Test / verification | Documentation | Status |
 | --- | --- | --- | --- | --- |
-| Signup | — | — | [authentication.md](../modules/authentication.md) | planned |
-| Login | — | — | [authentication.md](../modules/authentication.md) | planned |
-| Logout | — | — | [authentication.md](../modules/authentication.md) | planned |
-| Password hashing | — | — | [authentication.md](../modules/authentication.md) | planned |
-| Access-token verification | — | — | [authentication.md](../modules/authentication.md) | planned |
-| Refresh-token rotation | — | — | [authentication.md](../modules/authentication.md) | planned |
-| Refresh-token revocation / reuse detection | — | — | [authentication.md](../modules/authentication.md) | planned |
-| Email verification | — | — | [authentication.md](../modules/authentication.md) | planned |
-| Password reset (expiring, single-use) | — | — | [authentication.md](../modules/authentication.md) | planned |
-| Anti-enumeration responses | — | — | [authentication.md](../modules/authentication.md) | planned |
-| Login brute-force rate limiting | — | — | [authentication.md](../modules/authentication.md) | planned |
-| Test-only email delivery | — | — | [authentication.md](../modules/authentication.md) | planned |
+| Signup | `src/modules/auth/auth.service.js` (`signup`), `auth.routes.js`, `auth.schemas.js` | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): 202 generic, duplicate identical, mass assignment and weak input rejected, nothing created | [authentication.md](../modules/authentication.md) | verified |
+| Login | `src/modules/auth/auth.service.js` (`login`) | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): success, wrong password, unverified 403, disabled 403, unknown email same 401 | [authentication.md](../modules/authentication.md) | verified |
+| Logout | `src/modules/auth/auth.service.js` (`logout`, `logoutAll`) | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): logout 204 revokes the session family, unknown token 204, logout-all revokes every session | [authentication.md](../modules/authentication.md) | verified |
+| Password hashing | `src/modules/auth/password-hasher.js` (Argon2id, `argon2`) | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): stored `$argon2id$` hash, no password in DB/logs, dummy-hash timing equal (23.3 vs 22.2 ms) | [authentication.md](../modules/authentication.md) | verified |
+| Access-token verification | `src/modules/auth/token-service.js`, `auth.middleware.js` (jsonwebtoken, HS256 pinned, exp/sub/role required) | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): garbage, expired, forged secret, wrong audience/issuer, alg=none, non-Bearer all 401 | [authentication.md](../modules/authentication.md) | verified |
+| Refresh-token rotation | `src/modules/auth/auth.service.js` (`refresh`), `src/db/repositories/refresh-tokens.repository.js` | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): new pair each time, hashed storage, parent link, parallel refresh: exactly one wins | [authentication.md](../modules/authentication.md) | verified |
+| Refresh-token revocation / reuse detection | `auth.service.js` (`handleRefreshReuse`), refresh-tokens repository | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): old token replay revokes the family and writes an audit event; logout replay is not flagged; expired refresh 401 | [authentication.md](../modules/authentication.md) | verified |
+| Email verification | `auth.service.js` (`verifyEmail`, `resendVerification`), `one-time-tokens.repository.js` | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): single use, expired/bogus generic 400, resend invalidates the older link | [authentication.md](../modules/authentication.md) | verified |
+| Password reset (expiring, single-use) | `auth.service.js` (`forgotPassword`, `resetPassword`) | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): 1 h token, single use, expired 400, weak password does not burn the token, all sessions revoked, notification email | [authentication.md](../modules/authentication.md) | verified |
+| Anti-enumeration responses | `auth.service.js` (generic messages, dummy hash), `auth.controller.js` | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): identical bodies for existing/unknown email on signup, forgot-password, login; status shown only after correct password | [authentication.md](../modules/authentication.md) | verified |
+| Login brute-force rate limiting | `src/modules/auth/attempt-limiter.js` (hook), limits in `src/modules/auth/index.js` | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): 429 + Retry-After after 5 failures (per email+ip), other email unaffected, success resets, mail endpoints throttled | [authentication.md](../modules/authentication.md) | verified |
+| Test-only email delivery | `src/email/test-mailer.js`, `src/email/templates.js`, `src/examples/mailbox-examples.routes.js` | manual verification in [authentication.md](../modules/authentication.md) ("Manual verification"): emails captured in memory, mailbox route 404 in production, only template name logged | [authentication.md](../modules/authentication.md) | verified |
 
 ## 8. Authorization & sessions (Phase 8)
 

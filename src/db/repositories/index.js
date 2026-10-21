@@ -2,8 +2,10 @@
 
 import { createAuditRepository } from './audit.repository.js';
 import { createCategoryRepository } from './categories.repository.js';
+import { createOneTimeTokenRepository } from './one-time-tokens.repository.js';
 import { createOutboxRepository } from './outbox.repository.js';
 import { createProductRepository } from './products.repository.js';
+import { createRefreshTokenRepository } from './refresh-tokens.repository.js';
 import { createSequenceRepository } from './sequences.repository.js';
 import { createUserRepository } from './users.repository.js';
 
@@ -15,5 +17,7 @@ export function createRepositories(models) {
     audit: createAuditRepository(models),
     outbox: createOutboxRepository(models),
     sequences: createSequenceRepository(models),
+    refreshTokens: createRefreshTokenRepository(models),
+    oneTimeTokens: createOneTimeTokenRepository(models),
   };
 }

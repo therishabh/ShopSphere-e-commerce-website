@@ -16,6 +16,8 @@ const makeApp = (env = 'test') =>
       NODE_ENV: env,
       LOG_LEVEL: 'silent',
       MONGODB_URI: 'mongodb://localhost:27017/test',
+      AUTH_JWT_SECRET: 'x'.repeat(32),
+      APP_BASE_URL: 'https://shop.example.com',
     }),
   });
 

@@ -17,6 +17,14 @@ import { seedDatabase } from '../src/db/seed.js';
 const MIGRATIONS_DIR = path.join(import.meta.dirname, '..', 'migrations');
 const command = process.argv[2];
 
+// Optional: SEED_PASSWORD (>= 12 chars) set ho to seed users ko wo password milta hai (local dev login ke liye).
+function seedPassword() {
+  const password = process.env.SEED_PASSWORD;
+  if (password && password.length < 12)
+    throw new Error('SEED_PASSWORD must be at least 12 characters');
+  return password || undefined;
+}
+
 async function main() {
   dotenv.config({ quiet: true });
   const config = loadConfig();
@@ -39,11 +47,11 @@ async function main() {
         console.log(`${m.applied ? 'applied ' : 'PENDING '} ${m.name}`);
       }
     } else if (command === 'seed') {
-      console.log('Seed complete:', await seedDatabase(database));
+      console.log('Seed complete:', await seedDatabase(database, { password: seedPassword() }));
     } else if (command === 'reset') {
       await database.connection.dropDatabase();
       await runMigrations({ database, directory: MIGRATIONS_DIR, logger });
-      console.log('Reset complete:', await seedDatabase(database));
+      console.log('Reset complete:', await seedDatabase(database, { password: seedPassword() }));
     } else {
       throw new Error('Usage: node scripts/db.js <migrate|status|seed|reset>');
     }

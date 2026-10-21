@@ -93,7 +93,7 @@ export function createApp({
 
   // Saare API routes `/api/v1` ke neeche. Body parsers aur module routers is router ke andar hain
   // (src/routes/api.routes.js), isliye parsing sirf API requests par hoti hai.
-  app.use('/api/v1', createApiRouter({ config }));
+  app.use('/api/v1', createApiRouter({ config, database, logger }));
 
   // 4. Aakhir mein 404: ye normal middleware hai (NotFoundError bana ke errorHandler ko deta hai). Yahan tak sirf wahi request pahunchti hai jise upar
   //    kisi ne handle nahi kiya. Isse upar koi route add karna hai to router ke andar karo; `createApp()` ke
