@@ -15,6 +15,7 @@ import { createAdminRouter } from '../modules/admin/admin.routes.js';
 import { createHttpExamplesRouter } from '../examples/http-examples.routes.js';
 import { createMiddlewareExamplesRouter } from '../examples/middleware-examples.routes.js';
 import { createErrorExamplesRouter } from '../examples/error-examples.routes.js';
+import { createValidationExamplesRouter } from '../examples/validation-examples.routes.js';
 
 // Request body ki maximum size. Isse bada body bhejne par 413 (Payload Too Large) milta hai,
 // taaki koi bahut bada body bhejkar server ki memory na kha sake.
@@ -52,6 +53,7 @@ export function createApiRouter({ config }) {
     // warna '/examples' wala router unke requests pehle pakad leta.
     api.use('/examples/middleware', createMiddlewareExamplesRouter());
     api.use('/examples/errors', createErrorExamplesRouter());
+    api.use('/examples/validation', createValidationExamplesRouter());
     api.use('/examples', createHttpExamplesRouter());
   }
 

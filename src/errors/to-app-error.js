@@ -10,6 +10,7 @@
 
 import { STATUS_CODES } from 'node:http';
 import { ZodError } from 'zod';
+import { zodIssuesToDetails } from './zod-details.js';
 import {
   AppError,
   AuthorizationError,
@@ -55,7 +56,7 @@ export function toAppError(err) {
   // Kisi ne seedha schema.parse() karke ZodError throw kiya (e.g. service ya route mein).
   if (err instanceof ZodError) {
     return new ValidationError('Validation failed', {
-      details: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      details: zodIssuesToDetails(err.issues),
       cause: err,
     });
   }

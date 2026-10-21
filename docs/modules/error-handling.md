@@ -91,5 +91,5 @@ Services and repositories just `throw`. Domain failures throw the matching `AppE
 
 - Examples that previously sent inline error JSON (route guards, notes routes) now throw; response bodies are unchanged.
 - `/api/v1/examples/middleware/guarded` still sends its 403 inline on purpose: it demonstrates stopping the pipeline by responding.
-- Validation errors are 400 (not 422) to stay consistent with Phase 2; revisit in Phase 5 if the API contract needs 422.
-- `details` is a plain array of `{path, message}`; Phase 5 may add the source (`body|query|params`).
+- Validation errors are 400 (not 422); kept in Phase 5 so existing clients/tests are unaffected.
+- `details` entries are `{ path, message }`, plus `source` (`body|query|params`) when raised by the `validate()` middleware (Phase 5).

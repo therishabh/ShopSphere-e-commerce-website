@@ -11,7 +11,7 @@ Single source of truth for what is actually done. Every concept named in the [pl
 5. Documentation links point to the page the owning phase will create; a link is valid only after that phase lands.
 6. Phase 24 audits every row. Phase 25 must not report "all concepts complete" unless every row is `verified`.
 
-**Current state: Phase 4 complete. Sections 1–4 are `verified`; every other concept is `planned`.**
+**Current state: Phase 5 complete except OpenAPI/Swagger. Sections 1–4 are `verified`; section 5 is `verified` except "OpenAPI spec" and "Swagger UI" (built on branch `feature/openapi-swagger`, to be merged later); every other concept is `planned`.**
 
 Note: the `/health/ready` row is verified against fake dependency checks; the database-backed check is tracked under Persistence (Phase 6).
 
@@ -83,16 +83,16 @@ Note: the `/health/ready` row is verified against fake dependency checks; the da
 
 | Concept | Implementation / demo | Test / verification | Documentation | Status |
 | --- | --- | --- | --- | --- |
-| Zod validation of params/query/body | — | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
-| Validation before controllers | — | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
-| Pagination (page/limit or cursor) | — | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
-| Sorting allowlist | — | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
-| Filtering allowlist | — | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
-| Search query validation | — | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
-| Success/error response convention | — | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
-| OpenAPI spec | — | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
-| Swagger UI | — | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
-| Unexpected-field rejection / mass-assignment prevention | — | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
+| Zod validation of params/query/body | `src/http/validate.js`, `src/modules/products/products.schemas.js` | `tests/unit/validate-middleware.test.js`, `tests/integration/validation.test.js` (params, query, body) | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | verified |
+| Validation before controllers | `src/http/validate.js` (route middleware before the handler), `src/examples/validation-examples.routes.js` | `tests/unit/validate-middleware.test.js`, `tests/integration/validation.test.js` (rejected requests never stored; mutation-checked: removing validate() broke ~100 tests) | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | verified |
+| Pagination (page/limit or cursor) | `src/http/query/pagination.js`, `src/http/query/list-query.js` (offset strategy; cursor trade-off documented) | `tests/unit/query-helpers.test.js`, `tests/integration/validation.test.js` (bounds, page past end, metadata) | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | verified |
+| Sorting allowlist | `src/http/query/sorting.js` (API name -> db column map) | `tests/unit/query-helpers.test.js`, `tests/integration/validation.test.js` (injection/`__proto__`/duplicates; mutation-checked: 27 fail without the regex) | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | verified |
+| Filtering allowlist | `src/http/query/list-query.js`, `src/http/query/fields.js`; product filters in `products.schemas.js` | `tests/unit/query-helpers.test.js`, `tests/integration/validation.test.js` (unknown filters rejected, min<=max) | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | verified |
+| Search query validation | `src/http/query/fields.js` (`searchTerm`) | `tests/unit/query-helpers.test.js`, `tests/integration/validation.test.js` (trim, empty, length, control characters) | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | verified |
+| Success/error response convention | `src/http/schemas.js`, `src/http/query/pagination.js` (`buildPagination`) | `tests/integration/validation.test.js` (bare resource, `{items, pagination}`, `{error}` parsed with the response schemas) | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | verified |
+| OpenAPI spec | — (on branch `feature/openapi-swagger`, not merged) | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
+| Swagger UI | — (on branch `feature/openapi-swagger`, not merged) | — | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | planned |
+| Unexpected-field rejection / mass-assignment prevention | `z.strictObject` in `products.schemas.js` and `validate()` | `tests/integration/validation.test.js` (`id`, `role`, `createdAt` rejected and never stored), `tests/unit/validate-middleware.test.js`; mutation-checked | [validation-and-api-contracts.md](../modules/validation-and-api-contracts.md) | verified |
 
 ## 6. Persistence (Phase 6)
 

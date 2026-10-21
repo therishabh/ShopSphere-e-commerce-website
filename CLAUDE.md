@@ -38,8 +38,9 @@ ShopSphere is a production-style multi-vendor e-commerce backend (customers, sel
 
 ## Testing and verification
 
-- Add or update automated tests for every meaningful behaviour and every error path.
-- Run the relevant tests, lint, format and build/check scripts that exist. Report the actual commands and results. Never claim a command passed unless it ran successfully; label environment-dependent checks (Postgres, Redis, Docker) as such.
+- **Do not write new tests** (owner's decision: the current focus is development, not testing). Do not create new test files or add test cases. Existing tests and helpers stay; keep them passing, and change an existing test only when a deliberate behaviour change breaks it (minimal edit). This overrides any phase prompt that asks for tests.
+- Without new automated tests, record evidence as a **repeatable manual verification** (exact curl/commands and their observed results) in the module doc and README. A concept with only manual evidence can be `documented`; mark it `verified` only if its checks are repeatable and were actually run (a documented command sequence counts).
+- Run the existing tests, lint, format and build/check scripts that exist. Report the actual commands and results. Never claim a command passed unless it ran successfully; label environment-dependent checks (Postgres, Redis, Docker) as such.
 - Fix failing or flaky tests instead of skipping them. If a skip is unavoidable, record the reason.
 
 ## Documentation
