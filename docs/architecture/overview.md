@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> Target architecture. Nothing here is implemented yet; see the [matrix](../coverage/EXPRESS_CONCEPT_MATRIX.md) for real status.
+> Target architecture. Phases 0-8 are implemented (API, MongoDB, auth, authorization, Redis browser sessions); worker, Socket.IO, Nginx and the rest are still planned. See the [matrix](../coverage/EXPRESS_CONCEPT_MATRIX.md) for real status.
 
 ## Shape
 
@@ -29,7 +29,7 @@ migrations/  scripts/  tests/{unit,integration,security,e2e}/
 labs/  docs/  deploy/
 ```
 
-Directory layout is provisional until Phase 1.
+Layout shown is the plan; the real tree is in the README (section 8).
 
 ## Decisions to record as ADRs
 

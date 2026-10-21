@@ -32,6 +32,10 @@ export const productSchema = new Schema(
     priceCents: integer({ min: 0, max: MAX_PRICE_CENTS }),
     currency: { type: String, enum: CURRENCIES, default: 'INR', required: true },
     status: { type: String, enum: PRODUCT_STATUSES, default: 'DRAFT', required: true },
+    // Admin moderation ka natija (approve/reject). `moderationNote` seller ko dikhta hai (reject ka kaaran).
+    moderationNote: { type: String, maxlength: 500 },
+    moderatedAt: Date,
+    moderatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     // Embedded inventory. available = onHand - reserved. Update hamesha conditional + atomic (Phase 9/10):
     //   updateOne({ _id, $expr: available >= n }, { $inc: { 'stock.reserved': n } })
     stock: {

@@ -1,14 +1,84 @@
-// Admin module ke routes. Abhi jaan-boojh kar khaali hai.
-// Module mounted hai (src/routes/api.routes.js mein /api/v1/admin par), isliye URL space reserved hai,
-// lekin jab tak iska phase implement nahi hota koi endpoint expose nahi hota: fake endpoint banane se
-// behtar hai ki request seedha 404 par jaye. Endpoints yahan aayenge: router.get/post(...).
-import { Router } from 'express';
+// Admin ke routes (`/api/v1/admin/...`). Sab routes admin permissions maangte hain (default deny: customer/seller 403).
+// Database nahi to khaali router.
 
-/**
- * Admin routes. Intentionally empty: the module is mounted so the URL space is
- * reserved and wired, but it exposes no endpoints until its phase implements them.
- */
-export function createAdminRouter() {
-  // Khaali Router: koi route register nahi, isliye har request aage ke 404 handler tak chali jaati hai.
-  return Router();
+import { Router } from 'express';
+import { validate } from '../../http/validate.js';
+import { PERMISSIONS } from '../authz/permissions.js';
+import {
+  auditListQuery,
+  optionalNoteBody,
+  productIdParams,
+  productModerationListQuery,
+  reasonBody,
+  sellerIdParams,
+  sellerListQuery,
+} from './admin.schemas.js';
+
+export function createAdminRouter(deps) {
+  const router = Router();
+  if (!deps) return router;
+  const { controller, authenticate, requirePermission } = deps;
+
+  const sellerReview = [authenticate, requirePermission(PERMISSIONS.ADMIN_SELLER_REVIEW)];
+  const productModeration = [authenticate, requirePermission(PERMISSIONS.ADMIN_PRODUCT_MODERATE)];
+  const auditRead = [authenticate, requirePermission(PERMISSIONS.ADMIN_AUDIT_READ)];
+
+  router.get(
+    '/sellers',
+    ...sellerReview,
+    validate({ query: sellerListQuery }),
+    controller.listSellers,
+  );
+  router.post(
+    '/sellers/:sellerId/approve',
+    ...sellerReview,
+    validate({ params: sellerIdParams, body: optionalNoteBody }),
+    controller.sellerTransition('approve'),
+  );
+  router.post(
+    '/sellers/:sellerId/reject',
+    ...sellerReview,
+    validate({ params: sellerIdParams, body: reasonBody }),
+    controller.sellerTransition('reject'),
+  );
+  router.post(
+    '/sellers/:sellerId/suspend',
+    ...sellerReview,
+    validate({ params: sellerIdParams, body: reasonBody }),
+    controller.sellerTransition('suspend'),
+  );
+  router.post(
+    '/sellers/:sellerId/reinstate',
+    ...sellerReview,
+    validate({ params: sellerIdParams, body: optionalNoteBody }),
+    controller.sellerTransition('reinstate'),
+  );
+
+  router.get(
+    '/products',
+    ...productModeration,
+    validate({ query: productModerationListQuery }),
+    controller.listProducts,
+  );
+  router.post(
+    '/products/:productId/approve',
+    ...productModeration,
+    validate({ params: productIdParams, body: optionalNoteBody }),
+    controller.productDecision('approve'),
+  );
+  router.post(
+    '/products/:productId/reject',
+    ...productModeration,
+    validate({ params: productIdParams, body: reasonBody }),
+    controller.productDecision('reject'),
+  );
+
+  router.get(
+    '/audit-events',
+    ...auditRead,
+    validate({ query: auditListQuery }),
+    controller.listAuditEvents,
+  );
+
+  return router;
 }

@@ -34,6 +34,11 @@ export function createUserRepository({ User }) {
       );
     },
 
+    /** Role badalta hai (seller approve hone par SELLER). Document nahi mila to 404. */
+    async setRole(id, role) {
+      await User.findByIdAndUpdate(id, { role }, { runValidators: true }).orFail();
+    },
+
     /** Naya password hash (reset ke baad ya rehash par). Document nahi mila to 404. */
     async setPasswordHash(id, passwordHash) {
       await User.findByIdAndUpdate(id, { passwordHash }, { runValidators: true }).orFail();

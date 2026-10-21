@@ -64,6 +64,29 @@ const schema = z.object({
 
   // Refresh token kitne din valid (har use par naya token milta hai, ye "sliding" nahi balki har token ki apni age hai).
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+
+  // --- Browser sessions (Phase 8)
+  // Redis connection string: redis://host:6379 ya rediss:// (TLS). Browser sessions Redis mein rehti hain. Set na ho to
+  // session routes mount hi nahi hote (bearer-token auth waise hi chalta hai). Password ho sakta hai: kabhi log mat karo.
+  REDIS_URL: z
+    .string()
+    .regex(/^rediss?:\/\//, 'must start with redis:// or rediss://')
+    .optional(),
+
+  // Session cookie ko sign karne ka secret (>= 32 chars): cookie mein session id hoti hai, aur signature se cookie tampering pakdi jaati hai.
+  // REDIS_URL ke saath production mein required; dev mein na ho to har run par random (restart par purani cookies bekaar).
+  SESSION_SECRET: z.string().min(32, 'must be at least 32 characters').optional(),
+
+  // Idle timeout (minutes): itni der koi request na aaye to session khatam. Har request par taza hota hai (rolling).
+  SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
+
+  // Absolute timeout (hours): kitna bhi active ho, itne ghante baad dobara login zaruri (chori hui session hamesha nahi chalegi).
+  SESSION_ABSOLUTE_HOURS: z.coerce.number().int().min(1).max(168).default(12),
+
+  // Kitne reverse proxies (Nginx/load balancer) ke peeche app hai. 0 = seedha internet. Production mein TLS proxy par khatam
+  // hota hai, aur Secure cookie / req.ip tabhi sahi chalte hain jab Express `X-Forwarded-*` headers par bharosa kare. Galat
+  // number se client apna IP/protocol jhooth bol sakta hai: sirf asli proxy hops ginao. (Poora hardening Phase 11 mein.)
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
 });
 
 // Config galat hone par ye custom error throw hota hai.
@@ -109,6 +132,11 @@ export function loadConfig(env = process.env) {
     APP_BASE_URL,
     ACCESS_TOKEN_TTL_SECONDS,
     REFRESH_TOKEN_TTL_DAYS,
+    REDIS_URL,
+    SESSION_SECRET,
+    SESSION_IDLE_MINUTES,
+    SESSION_ABSOLUTE_HOURS,
+    TRUST_PROXY_HOPS,
   } = result.data;
 
   // Production mein database ke bina app chalana galti hai (fail-fast). Dev/test mein optional hai: DB-based features
@@ -120,6 +148,9 @@ export function loadConfig(env = process.env) {
     // Production mein links https:// par hone chahiye (token wala link plain http par sniff ho sakta hai).
     if (!APP_BASE_URL.startsWith('https://'))
       problems.push('APP_BASE_URL: must use https:// when NODE_ENV=production');
+    // Redis (browser sessions) configured hai to cookie signing secret zaruri.
+    if (REDIS_URL && !SESSION_SECRET)
+      problems.push('SESSION_SECRET: required when REDIS_URL is set and NODE_ENV=production');
     if (problems.length > 0) throw new ConfigError(problems);
   }
 
@@ -144,5 +175,13 @@ export function loadConfig(env = process.env) {
       accessTokenTtlSeconds: ACCESS_TOKEN_TTL_SECONDS,
       refreshTokenTtlDays: REFRESH_TOKEN_TTL_DAYS,
     }),
+    redisUrl: REDIS_URL,
+    // Browser session ki settings. secret undefined ho sakta hai (dev/test).
+    session: Object.freeze({
+      secret: SESSION_SECRET,
+      idleMinutes: SESSION_IDLE_MINUTES,
+      absoluteHours: SESSION_ABSOLUTE_HOURS,
+    }),
+    trustProxyHops: TRUST_PROXY_HOPS,
   });
 }

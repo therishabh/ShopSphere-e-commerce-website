@@ -15,7 +15,7 @@ const challenge = (extra = '') => ({ 'WWW-Authenticate': `Bearer realm="shopsphe
 
 /**
  * @param {{ verifyAccessToken: (token: string) => Promise<{ userId: string, role: string }> }} tokens
- * Success par `res.locals.auth = { userId, role }`. Token nahi/galat/expired par 401 (kaaran client ko nahi batate).
+ * Success par `res.locals.auth = { userId, role, method: 'bearer' }`. Token nahi/galat/expired par 401 (kaaran client ko nahi batate).
  */
 export function createAuthenticate(tokens) {
   return async function authenticate(req, res, next) {
@@ -33,7 +33,7 @@ export function createAuthenticate(tokens) {
     }
 
     try {
-      res.locals.auth = await tokens.verifyAccessToken(match[1]);
+      res.locals.auth = { ...(await tokens.verifyAccessToken(match[1])), method: 'bearer' };
     } catch {
       // Expired, galat signature, galat audience... sab ek jaisa 401: attacker ko ye nahi dikhta ki kya galat tha.
       return next(

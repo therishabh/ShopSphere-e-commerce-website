@@ -99,3 +99,20 @@ export const productSchema = z.object({
 });
 
 export const productListResponseSchema = listResponseSchema(productSchema);
+
+// --- Seller ke product mutations (Phase 8)
+
+// PATCH /products/:productId: sirf ye teen fields badal sakte hain (strict: sku, status, sellerId, stock yahan se nahi badalte).
+// Kam se kam ek field zaruri. Status/stock ke liye alag, explicit endpoints hain.
+export const updateProductBodySchema = z
+  .strictObject({
+    name: createProductBodySchema.shape.name.optional(),
+    description: createProductBodySchema.shape.description,
+    priceCents: createProductBodySchema.shape.priceCents.optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, { message: 'at least one field is required' });
+
+// PUT /products/:productId/stock: physical stock (onHand) ki nayi value.
+export const stockBodySchema = z.strictObject({
+  onHand: z.number().int().min(0).max(1_000_000),
+});

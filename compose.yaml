@@ -1,4 +1,4 @@
-# Local development ke liye sirf MongoDB (baaki services Phase 20 mein aayengi).
+# Local development ke liye MongoDB aur Redis (baaki services Phase 20 mein aayengi).
 #
 # Replica set kyun: MongoDB ke multi-document transactions (order + stock + outbox ek saath) sirf replica set par
 # chalte hain, standalone server par nahi. Isliye ek single-node replica set ("rs0") chalate hain.
@@ -29,6 +29,21 @@ services:
       timeout: 10s
       retries: 20
       start_period: 5s
+
+  # Redis: browser sessions (aur aage cache/queues) ke liye. Local mein auth band, sirf 127.0.0.1 par, disk par kuch save nahi
+  # (sessions restart par chali jaayen to theek: dev data hai). Production mein managed Redis ka REDIS_URL (password/TLS ke saath).
+  redis:
+    image: redis:8-alpine
+    container_name: shopsphere-redis
+    restart: unless-stopped
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    ports:
+      - '127.0.0.1:6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   shopsphere_mongo_data:

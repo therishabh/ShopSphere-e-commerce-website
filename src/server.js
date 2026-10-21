@@ -13,6 +13,7 @@ import { createApp } from './app.js';
 import { createReadiness } from './health/readiness.js';
 import { createLogger } from './logging/logger.js';
 import { createDatabase } from './db/database.js';
+import { createRedis } from './redis/redis.js';
 
 /**
  * App banata hai, port par sunna shuru karta hai, aur jab port sach mein bind ho jaye tab resolve hota hai.
@@ -33,15 +34,28 @@ export async function startServer(
     database = config.mongodbUri
       ? createDatabase({ uri: config.mongodbUri, poolMax: config.dbPoolMax, logger })
       : undefined,
-    readiness = createReadiness({ checks: database ? { db: () => database.checkReady() } : {} }),
+    // Redis (browser sessions): REDIS_URL ho tabhi. Redis down ho to readiness 503 (sessions kaam nahi karengi).
+    redis = config.redisUrl ? createRedis({ url: config.redisUrl, logger }) : undefined,
+    readiness = createReadiness({
+      checks: {
+        ...(database ? { db: () => database.checkReady() } : {}),
+        ...(redis ? { redis: () => redis.checkReady() } : {}),
+      },
+    }),
   } = {},
 ) {
   if (!database && config.env !== 'test') {
     logger.warn('MONGODB_URI is not set: running without a database (readiness has no db check)');
   }
 
+  if (database && !redis && config.env !== 'test') {
+    logger.info(
+      'REDIS_URL is not set: browser session routes (/api/v1/session) are disabled; bearer-token auth only',
+    );
+  }
+
   // App yahan sirf *banta* hai; abhi tak koi port nahi khula.
-  const app = createApp({ config, readiness, logger, database });
+  const app = createApp({ config, readiness, logger, database, redis });
 
   // `app.listen()` turant server object return kar deta hai, lekin port asal mein thodi der baad
   // bind hota hai. Do events mein se koi ek aayega:
@@ -55,7 +69,7 @@ export async function startServer(
     s.once('error', reject);
   }).catch(async (err) => {
     // Port bind nahi hua: database connection khula reh jaata aur process atak sakta tha, isliye pehle band karo.
-    await database?.disconnect();
+    await Promise.all([database?.disconnect(), redis?.disconnect()]);
     throw err;
   });
 
@@ -66,6 +80,12 @@ export async function startServer(
     ?.connect()
     .catch((err) =>
       logger.error({ errName: err.name, errMessage: err.message }, 'mongodb connect aborted'),
+    );
+  // Redis bhi background mein (retry client khud karta hai); fail hone par bhi server chalta hai, sirf session routes 503 dete hain.
+  redis
+    ?.connect()
+    .catch((err) =>
+      logger.error({ errName: err.name, errMessage: err.message }, 'redis connect aborted'),
     );
 
   // Server ko band karne ka sahi order:
@@ -84,12 +104,13 @@ export async function startServer(
       server.closeIdleConnections();
     });
 
-    // 4. Sabse aakhir mein database connections band (HTTP requests khatam ho chuki hain, ab koi query nahi aayegi).
+    // 4. Ab Redis aur sabse aakhir mein database connections band (HTTP requests khatam ho chuki hain, ab koi query nahi aayegi).
+    await redis?.disconnect();
     await database?.disconnect();
   }
 
   // `server.address().port` isliye: agar PORT=0 diya (OS koi free port chune), to asli port yahin milta hai.
-  return { server, close, port: server.address().port, logger, database };
+  return { server, close, port: server.address().port, logger, database, redis };
 }
 
 async function main() {

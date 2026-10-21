@@ -1,4 +1,4 @@
-// MongoDB/Mongoose ke errors ko hamare AppError mein badalta hai (to-app-error.js isse call karta hai).
+// MongoDB/Mongoose (aur Redis client ke connectivity) errors ko hamare AppError mein badalta hai (to-app-error.js isse call karta hai).
 //
 // Kyun: services/repositories mein `try/catch` ke bina bhi duplicate email -> 409, missing document -> 404, database down -> 503
 // jaise sahi responses milein. Controllers ko Mongo ke error codes (11000...) ka pata hi nahi chalta.
@@ -25,6 +25,13 @@ const UNAVAILABLE_NAMES = new Set([
   'MongoTopologyClosedError',
   'MongoWaitQueueTimeoutError',
   'MongoExpiredSessionError',
+  // Redis (node-redis) ke connectivity errors: sessions store tak pahunch nahi paye.
+  'ClientClosedError',
+  'ClientOfflineError',
+  'SocketClosedUnexpectedlyError',
+  'SocketTimeoutError',
+  'ConnectionTimeoutError',
+  'ReconnectStrategyError',
 ]);
 
 // Server ke error codes: 13 Unauthorized, 18 AuthenticationFailed (config problem: client ko 503, credentials leak nahi),
@@ -67,7 +74,13 @@ export function mapDatabaseError(err) {
   if (!err || typeof err !== 'object' || typeof err.name !== 'string') return null;
   const { name, code } = err;
 
-  if (UNAVAILABLE_NAMES.has(name) || (name === 'MongoServerError' && UNAVAILABLE_CODES.has(code))) {
+  // node-redis ke errors ka `err.name` sirf 'Error' hota hai (class ka naam constructor mein), isliye constructor ka naam bhi dekhte hain.
+  const className = err.constructor?.name;
+  if (
+    UNAVAILABLE_NAMES.has(name) ||
+    UNAVAILABLE_NAMES.has(className) ||
+    (name === 'MongoServerError' && UNAVAILABLE_CODES.has(code))
+  ) {
     return new ServiceUnavailableError({ cause: err });
   }
   // Mongoose ke buffer mein query atak gayi kyunki connection hi nahi bana ("buffering timed out").

@@ -4,7 +4,7 @@ Multi-vendor e-commerce backend (customers, sellers, admins). Express 5 + ESM Ja
 
 > Ye README poora project guide hai: kya banaya, kis sequence mein, kyun, aur code kaise kaam karta hai. Har phase ke baad update hoti hai. Naye developer ya fresher ko sirf ise padh ke project aur uska code samajh aa jana chahiye, aur isi ko recipe ki tarah follow karke doosra project bhi banaya ja sake.
 
-**Current status: Phase 7 complete** (foundation, routing, middleware, errors, validation, MongoDB persistence, aur ab **authentication**: signup, login, refresh-token rotation, email verification, password reset). **Database sirf MongoDB hai: PostgreSQL/Prisma/SQL bilkul nahi.** OpenAPI + Swagger UI `main` par nahi hain: wo branch `feature/openapi-swagger` par hain.
+**Current status: Phase 8 complete** (foundation, routing, middleware, errors, validation, MongoDB persistence, authentication, aur ab **authorization + browser sessions**: roles/permissions, seller ownership, admin approval/moderation, audit trail, Redis cookie sessions with CSRF). **Database sirf MongoDB hai: PostgreSQL/Prisma/SQL bilkul nahi.** OpenAPI + Swagger UI `main` par nahi hain: wo branch `feature/openapi-swagger` par hain.
 
 ---
 
@@ -49,6 +49,7 @@ Poori file ek saath padhna zaruri nahi. Apne goal ke hisaab se path chuno:
    - [Phase 5 — Validation aur API conventions](#phase-5--validation-aur-api-conventions)
    - [Phase 6 — Persistence: MongoDB + Mongoose](#phase-6--persistence-mongodb--mongoose)
    - [Phase 7 — Authentication](#phase-7--authentication)
+   - [Phase 8 — Authorization, ownership aur browser sessions](#phase-8--authorization-ownership-aur-browser-sessions)
 8. [Current project structure](#8-current-project-structure)
 9. [Run kaise karein (setup, scripts)](#9-run-kaise-karein-setup-scripts)
 10. [Verification results (ab tak)](#10-verification-results-ab-tak)
@@ -81,14 +82,14 @@ Is repo ka secondary goal: har Express concept (middleware, error handling, `nex
 
 ## 2. Quick start
 
-Prerequisites: Node.js >= 24, npm, aur **Docker** (local MongoDB replica set ke liye). Redis abhi zaruri nahi.
+Prerequisites: Node.js >= 24, npm, aur **Docker** (local MongoDB replica set aur Redis ke liye). Redis sirf browser sessions ke liye hai: na ho to bhi baaki API (bearer auth) chalti hai.
 
 ```bash
 git clone https://github.com/therishabh/ShopSphere-e-commerce-website.git
 cd ShopSphere-e-commerce-website
 npm ci                      # lockfile se exact versions
 cp .env.example .env        # MONGODB_URI is mein hai
-npm run db:up               # MongoDB (single-node replica set) Docker mein
+npm run db:up               # MongoDB (single-node replica set) + Redis Docker mein
 npm run db:migrate          # collections + validators + indexes
 npm run db:seed             # sample data
 npm run dev                 # server http://127.0.0.1:3000
@@ -121,7 +122,7 @@ Aage ka detail section 9 mein hai.
 | Core DB        | **MongoDB + Mongoose 9** (replica set)                            | Document model, flexible catalog, order snapshots embedded; FK/CHECK nahi milte, isliye validators + unique/partial indexes + conditional updates |
 | Auth libraries | `argon2` (Argon2id passwords), `jsonwebtoken` (JWT access tokens) | Dono maintained; refresh/verify/reset tokens opaque random + SHA-256 hash DB mein                                                                 |
 | Migrations     | Apna chhota versioned runner (`migrations/`)                      | Mongo mein built-in SQL jaisi migrations nahi                                                                                                     |
-| Redis          | Cache, BullMQ queues, sessions                                    | Outage pe commerce state corrupt nahi hona chahiye                                                                                                |
+| Redis          | Browser sessions (Phase 8); aage cache aur BullMQ queues          | Outage par commerce state corrupt nahi hona chahiye: Redis band ho to sirf cookie-session requests 503 deti hain                                  |
 | Realtime       | Socket.IO                                                         | Order status updates                                                                                                                              |
 | Storage        | S3-compatible, adapter ke peeche                                  | Local adapter dev ke liye                                                                                                                         |
 | Validation     | Zod 4.6.7                                                         | Env + request validation                                                                                                                          |
@@ -165,7 +166,9 @@ Is order mein files kholo; har step pichle step par build hota hai. Har source f
 | 7   | `src/routes/api.routes.js`                                                                                      | `/api/v1` prefix, body parsers, module mounts                                                                            |
 | 7b  | `src/db/` (`database.js`, `models/`, `repositories/`, `map-database-error.js`), `migrations/`, `compose.yaml`   | MongoDB connection + models + validators + repositories + transactions + error mapping (Phase 6)                         |
 | 7c  | `src/modules/auth/*.js`, `src/email/*.js`, `src/db/repositories/{refresh-tokens,one-time-tokens}.repository.js` | Auth: service (flows), token-service (JWT + opaque), password-hasher, middleware, rate-limit hook, test mailer (Phase 7) |
-| 8   | `src/modules/users/users.routes.js` (koi bhi khaali module)                                                     | Khaali-par-mounted module; baaki 5 bilkul same                                                                           |
+| 8   | `src/modules/{users,cart,orders}/*.routes.js`                                                                   | Abhi bhi khaali-par-mounted modules (auth/sellers/products/admin ab bhare hain)                                          |
+| 8b  | `src/modules/authz/*.js`, `src/modules/{sellers,products,admin}/*.js`                                           | Phase 8: permissions (`can`), `requirePermission`, ownership checks, seller apply/approve, product moderation, audit     |
+| 8c  | `src/modules/session/*.js`, `src/redis/redis.js`                                                                | Phase 8: Redis cookie session, CSRF, `authenticateEither`, session registry                                              |
 | 9   | `src/http/route-guards.js`                                                                                      | Reusable route-specific middleware (415, 400, 405)                                                                       |
 | 10  | `src/errors/app-errors.js`, `to-app-error.js`, `src/http/error-handler.js`, `not-found.js`                      | Error hierarchy, thrown value ki classification, aur central safe response + logging                                     |
 | 11  | `src/http/validate.js`, `src/http/query/*.js`, `src/http/schemas.js`                                            | Zod validation middleware, strict query helpers, pagination/sorting allowlist, shared response schemas                   |
@@ -294,6 +297,18 @@ Sirf wo concepts jo ab tak code mein use hue hain. Naye phases ke concepts us ph
 | **Single-use token**                              | Ek atomic DB update jo token check karke "used" mark karta hai: do requests ek saath aayein to bhi sirf ek chalti hai.                                                                                                                                |
 | **Account enumeration**                           | Attacker ka response/timing se pata lagana ki email registered hai ya nahi. Rokne ke liye generic responses aur dummy-hash timing.                                                                                                                    |
 | **Rate-limit hook**                               | `check / record / reset` interface; abhi in-memory, baad mein Redis se badal sakta hai bina service badle.                                                                                                                                            |
+| **RBAC / permission**                             | Role-based access control: role (customer/seller/admin) se permissions ki list; route sirf permission maangta hai (`requirePermission`). Jo list mein nahi wo **default deny**.                                                                       |
+| **Authentication vs authorization**               | Authentication = tum kaun ho. Authorization = tum ye kaam kar sakte ho ya nahi. Phase 8 mein alag modules.                                                                                                                                            |
+| **Ownership check**                               | Role kaafi nahi: "ye product tumhara hai?" Service mein compare + DB query filter (`{_id, sellerId}`) dono = **defense in depth**; ID badalne se doosre ka data nahi badalta.                                                                         |
+| **Moderation / state machine**                    | Admin ke allowed transitions (seller: approve/reject/suspend/reinstate; product: approve/reject/archive); galat transition 409.                                                                                                                       |
+| **Audit event**                                   | Sensitive admin kaam ka record (actor, action, target, kab) bina password/token ke.                                                                                                                                                                   |
+| **Session vs token**                              | Bearer token client khud bhejta hai (API clients). Session = server Redis mein state, browser ko sirf cookie (session id). Dono alag path, ek request mein mix nahi.                                                                                  |
+| **HttpOnly / Secure / SameSite / `__Host-`**      | Cookie flags: JS padh nahi sakta / sirf HTTPS / cross-site requests par nahi jaati / `__Host-` prefix = Secure + Path=/ + no Domain (production mein).                                                                                                |
+| **Session fixation**                              | Attacker pehle se session id de de aur victim login kare. Rokne ke liye login par `regenerate` (nayi id).                                                                                                                                             |
+| **CSRF + synchronizer token**                     | Doosri site browser se tumhari cookie ke saath request bhej de. Rokne ke liye session-bound token `X-CSRF-Token` header mein + Origin/`Sec-Fetch-Site` check + SameSite.                                                                              |
+| **Idle vs absolute timeout (rolling)**            | Idle: itni der request nahi to session khatam (har request par taza). Absolute: kitna bhi active ho, itne ghante baad dobara login.                                                                                                                   |
+| **Trust proxy**                                   | Reverse proxy ke peeche `X-Forwarded-*` par bharosa; `TRUST_PROXY_HOPS` sirf asli proxy hops jitna, warna client IP/protocol jhooth bol sakta hai.                                                                                                    |
+| **Redis (sessions)**                              | In-memory key-value store; sessions TTL ke saath yahan. Down ho to sirf cookie requests 503.                                                                                                                                                          |
 | **Interim**                                       | Abhi ke liye kaafi, baad ke phase mein replace (e.g. Phase 2 ka `clientErrorHandler` Phase 4 mein central `errorHandler` se replace hua).                                                                                                             |
 | **Modular monolith**                              | Ek deployable app, andar alag modules (auth, products, ...). Microservices nahi.                                                                                                                                                                      |
 | **Mock provider**                                 | Payment/email ke test-safe fake adapters; real credentials kabhi nahi.                                                                                                                                                                                |
@@ -518,7 +533,7 @@ Result: 23/23 tests pass, lint aur format clean.
 
 Design decision jo pehle liya: "fake business endpoints nahi" aur "concepts demonstrate karne hain" dono saath chahiye the. Isliye:
 
-- 7 module routers (**auth, users, sellers, products, cart, orders, admin**) valid aur mounted hain, lekin **khaali** (URL space reserved, koi endpoint nahi).
+- 7 module routers (**auth, users, sellers, products, cart, orders, admin**) valid aur mounted hain, lekin us waqt **khaali** the (URL space reserved, koi endpoint nahi). Baad mein `auth` Phase 7 mein, aur `sellers`, `products`, `admin` Phase 8 mein bhare gaye; abhi sirf `users`, `cart`, `orders` khaali hain.
 - Concepts ek alag `/api/v1/examples` router mein dikhaye, jo sach mein kaam karta hai (per-app in-memory notes), clearly labelled hai, aur **production mein mount nahi hota**.
 
 Sequence:
@@ -1083,6 +1098,93 @@ Ek galat alarm bhi mila: meri ek check ne "reuse events == 1" maana tha jabki pa
 
 Result: 390/390 purane tests pass (koi naya test nahi), lint aur format clean.
 
+### Phase 8 — Authorization, ownership aur browser sessions
+
+**Goal:** authorization ko authentication se alag banana: roles customer/seller/admin, explicit permission aur ownership checks (seller sirf URL mein id badalkar doosre seller ka product/inventory na chhoo sake), admin-only seller approval aur product moderation, sensitive admin actions ka audit trail (bina secrets), aur ek documented **browser session path** (secure cookie + Redis store + CSRF protection) jo bearer-token auth se saaf alag ho. Naye tests nahi likhe (owner ka rule); evidence 121 manual checks + mutation checks se (`docs/modules/authorization-and-sessions.md`).
+
+Design decisions:
+
+- **Permission-based, default deny:** code kabhi `if (role === 'ADMIN')` nahi likhta; route `requirePermission('admin:seller:review')` maangta hai aur ek role->permissions table faisla karti hai.
+- **Role database se, token se nahi:** har protected request par user DB se padha jaata hai (ek `_id` lookup), isliye role hata do ya user disable karo to turant asar, 15 min intezaar nahi.
+- **Ownership server tay karta hai:** seller ki pehchan actor ke seller profile se, client ke bheje `sellerId` se kabhi nahi.
+- **Do raaste, ek authorization:** bearer aur session alag authenticate karte hain, lekin dono `res.locals.auth` banate hain aur aage ka authorization code ek hi hai.
+- **Redis sessions ke liye `redis` (node-redis) + `connect-redis`:** `connect-redis` v10 ka documented client yahi hai (ioredis nahi); BullMQ ke liye ioredis Phase 14 mein alag se.
+
+Sequence:
+
+**Step 1 — Libraries aur infra verify.** `express-session@1.19.0`, `connect-redis@10.0.0`, `redis@6.3.0`. `compose.yaml` mein `redis:8-alpine` (sirf `127.0.0.1`, disk par kuch save nahi), aur `npm run db:up` ab MongoDB aur Redis dono chalata hai. Ek probe se express-session ka asli behaviour dekha: cookie flags, anonymous request par cookie nahi, `regenerate` se naya session id (purana dead), forged cookie anonymous, aur **gotcha:** `Secure` cookie bina `trust proxy` ke plain HTTP request par chupchaap set nahi hoti (login "safal" dikhta par session nahi banti).
+
+**Step 2 — Config.** `REDIS_URL` (optional; na ho to session routes mount nahi), `SESSION_SECRET` (>= 32 chars; `REDIS_URL` ke saath production mein required), `SESSION_IDLE_MINUTES` (30), `SESSION_ABSOLUTE_HOURS` (12), `TRUST_PROXY_HOPS` (0; `app.set('trust proxy', n)`).
+
+**Step 3 — Redis module (`src/redis/redis.js`).** `createRedis({ url, logger })`: `disableOfflineQueue: true` (Redis down ho to command turant fail, request latki nahi), reconnect backoff 250ms..5s, `error` listener, `checkReady()` (PING). `server.js` ise background mein connect karta hai, readiness mein `redis` check judta hai, aur shutdown order ab: HTTP close -> Redis -> MongoDB.
+
+**Step 4 — Authorization module (`src/modules/authz/`).**
+
+- `permissions.js`: 9 permissions aur `ROLE_PERMISSIONS` (CUSTOMER: `seller:apply`, `seller:read:own`; SELLER: product/inventory `:own` permissions; ADMIN: `admin:seller:review`, `admin:product:moderate`, `admin:audit:read`). `can(role, permission)` default deny.
+- `authorize.js`: `requirePermission(p)` user DB se padhta hai, `ACTIVE` zaruri, permission na ho to `403`, aur `res.locals.actor = { id, role }` set karta hai. Denial sirf log hota hai (audit mein nahi: koi bhi spam karke use bhar sakta hai).
+- `ownership.js`: `requireApprovedSeller` (profile `APPROVED` na ho to `403 SELLER_NOT_APPROVED`) aur `requireOwnedProduct` (product nahi mila 404, kisi aur seller ka 403).
+
+```js
+router.post(
+  '/products',
+  authenticate,
+  requirePermission(PERMISSIONS.PRODUCT_CREATE),
+  validate({ body }),
+  controller.create,
+);
+```
+
+**Step 5 — Seller aur product mutations (real endpoints).** `POST /sellers/apply`, `GET /sellers/me`; `POST /products` (DRAFT), `PATCH /products/:id`, `PUT /products/:id/stock`, `POST /products/:id/submit`. Ownership **do layers** mein: service check, aur update query ka filter `{ _id, sellerId: <actor ka profile>, status: <allowed> }`:
+
+```js
+Product.findOneAndUpdate({ _id: id, sellerId, status: { $in: allowedStatuses } }, { $set: set }, ...)
+```
+
+Owner sirf DRAFT/REJECTED product edit kar sakta hai (approved product edit karna moderation bypass hota). Product schema mein `moderationNote`, `moderatedAt`, `moderatedBy` jude.
+
+**Step 6 — Admin module.** Seller transitions explicit table se (`approve` PENDING->APPROVED, `reject` PENDING->REJECTED, `suspend` APPROVED->SUSPENDED, `reinstate` SUSPENDED->APPROVED), conditional update se (galat status 409, do admins ek saath to ek hi jeetta). Approve par user ka role `SELLER` usi transaction mein. Product moderation: `PENDING_REVIEW` -> `ACTIVE` ya `REJECTED` (reason zaruri); suspended seller ka product approve nahi hota. `GET /admin/audit-events` filters ke saath (Phase 5 ka list toolkit).
+
+**Step 7 — Audit.** Har seller/product/admin action usi transaction mein `audit_events` mein: actor, entity, `{ from, to, reason }` (ya sirf badle hue field ke naam). Secret-jaisi keys audit repository reject karta hai; tokens/cookies/CSRF kabhi nahi pahunchte.
+
+**Step 8 — Auth service refactor.** `login` ka credentials wala hissa `checkCredentials` mein nikala (throttle -> password -> status), aur `verifyCredentials` ke roop mein expose kiya, taaki session login wahi rules use kare. `resetPassword` aur `logoutAll` ab browser sessions bhi revoke karte hain (`sessions.revokeAll`).
+
+**Step 9 — Session module (`src/modules/session/`).**
+
+- `session.middleware.js`: `express-session` + `RedisStore` (`prefix: 'sess:'`, `ttl` = idle timeout), `saveUninitialized: false` (anonymous ko cookie nahi), `rolling: true`. Cookie: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` + naam `__Host-sid` production mein.
+- `session.controller.js`: login (origin check -> `verifyCredentials` -> **`regenerate`** (session fixation se bachav) -> `userId`, `createdAt`, `csrfToken` store -> registry mein id), logout, logout-all, me, csrf. Production mein "Secure cookie par request HTTPS nahi dikhi" par saaf `500` + log (chupchaap fail nahi).
+- `session-registry.js`: Redis set `sess_user:<userId>` jisse ek user ki saari sessions ek saath delete ho sakti hain (password reset, logout-all).
+- `csrf.js`: unsafe methods par (1) `SameSite=Lax`, (2) **synchronizer token** `X-CSRF-Token` (session se bandha, constant-time compare), (3) **Origin check** (`APP_BASE_URL` ka origin ya request ka apna; `Sec-Fetch-Site: cross-site` reject). Login par sirf origin check (token abhi hai hi nahi).
+- Absolute timeout: `createdAt` se 12 ghante baad session band, chahe active ho.
+
+**Step 10 — Bearer aur session alag, authorization ek (`authenticate-either.js`).**
+
+```js
+if (req.get('authorization') || !session) return bearer(req, res, next); // header ho to SIRF bearer, cookie dekhi hi nahi
+return session(req, res, next); // warna cookie + CSRF
+```
+
+Isse invalid bearer + valid cookie `401` deta hai (cookie par fallback nahi), aur bearer request ko CSRF token nahi chahiye.
+
+**Step 11 — Wiring (`api.routes.js`, `app.js`, `server.js`).** Database ho to auth + authz + sellers/products/admin real; Redis bhi ho to `/session` bhi; warna wo hisse khaali routers (404). `createApp` ab `redis` leta hai aur `trust proxy` set karta hai.
+
+**Step 12 — Manual verification (121 checks, sab pass; poori list doc mein).** Asli server + MongoDB + Redis par:
+
+- **Unauthenticated:** 7 endpoints `401` + `WWW-Authenticate`.
+- **Forbidden:** customer/seller/admin ko galat jagah `403`; pending seller `403 SELLER_NOT_APPROVED`.
+- **Correct owner:** create/patch/stock/submit sab chalte hain; client ka `sellerId`/`status`/`sku` body mein `400`.
+- **Wrong owner:** seller2 seller1 ke product par (patch, stock, submit, sirf URL ki id badal kar) `403`, aur document byte-for-byte same.
+- **Admin:** approve/reject/suspend/reinstate, invalid transitions `409`, role promotion, moderation, 12 audit action types (actor/from/to/reason), audit mein koi secret nahi.
+- **Turant asar:** DB mein seller ka role badalne ya admin disable karne par **wahi access token** agli request par refuse.
+- **Sessions/CSRF:** cookie flags, fixation, forged cookie `401`, bina/galat/doosre session ke token ya foreign Origin par `403` aur kuch create nahi hota; sahi token par `201`; logout/logout-all/password reset/disable se session khatam; idle aur absolute timeout; 5 failed logins ke baad `429`.
+- **Failure modes:** Redis band hone par cookie requests `503` + `Retry-After` jabki bearer aur public routes `200`, readiness `503`, wapas aane par recover; production mein `__Host-sid; Secure` proxy ke peeche; `SESSION_SECRET` ke bina production exit 1.
+  **Mutation checks:** service ka ownership check hataya -> product phir bhi safe (`409`, query filter ne roka); dono layers hataye -> product hijack ho gaya; CSRF check hataya -> bina token ka cookie POST `201`; `can()` ko hamesha true -> seller ne admin audit padh liya. (Pehli baar M1 ka result bekar tha kyunki seller2 ka password session test mein reset ho chuka tha aur login 401 de raha tha, to "safe" khali sach tha. Seller2 ke naye password se dobara chalaya tab asli natija mila. Seekh: mutation test mein pehle confirm karo ki attacker login sach mein safal hai.)
+
+**Ek bug mila aur theek hua:** Redis band hone par cookie requests `500` de rahi thi. Wajah: node-redis ke errors ka `err.name` sirf `'Error'` hota hai (class ka naam `constructor.name` mein), isliye 503 mapping unhe pehchan nahi pa rahi thi. `map-database-error.js` ab constructor ka naam bhi dekhta hai.
+
+**Step 13 — Docs aur matrix.** `docs/modules/authorization-and-sessions.md` (roles/permissions, request pipeline, ownership aur status codes, lifecycle, endpoints, audit, cookie settings, Redis store, CSRF, bearer vs session, failure handling, manual verification, trade-offs). Matrix section 8 ke 10 rows `verified`. Purane docs (`authentication.md`, `routing-and-http.md`) mein stale "Phase 8" wale hisse theek kiye.
+
+Result: 390/390 purane tests pass (koi naya test nahi), lint aur format clean, `npm audit --omit=dev` 0.
+
 ## 8. Current project structure
 
 ```
@@ -1102,7 +1204,8 @@ Result: 390/390 purane tests pass (koi naya test nahi), lint aur format clean.
 │   │   ├── readiness.js          # createReadiness()
 │   │   └── health.routes.js      # /health/live, /health/ready
 │   ├── routes/api.routes.js      # /api/v1: parsers + module mounts (+ examples, non-prod)
-│   ├── modules/<name>/<name>.routes.js   # auth users sellers products cart orders admin (empty, mounted); auth ka poora module: src/modules/auth/
+│   ├── redis/redis.js           # createRedis(): node-redis client (browser sessions)
+│   ├── modules/                  # auth (Phase 7); authz, session, sellers, products, admin (Phase 8); users, cart, orders abhi khaali-par-mounted
 │   ├── db/                       # database.js, migrations.js, seed.js, serialize.js, map-database-error.js, models/, repositories/
 │   ├── email/                    # test-mailer.js (memory mein emails), templates.js
 │   ├── errors/                   # app-errors.js (hierarchy), to-app-error.js (classification), zod-details.js
@@ -1111,7 +1214,7 @@ Result: 390/390 purane tests pass (koi naya test nahi), lint aur format clean.
 │   └── examples/                 # teaching only, /api/v1/examples/*, non-prod: http-examples, middleware-examples, error-examples, validation-examples
 ├── migrations/                   # 0001_collections_validators_and_indexes.js (versioned, Mongo)
 ├── scripts/db.js                 # CLI: migrate | status | seed | reset
-├── compose.yaml                  # local MongoDB single-node replica set
+├── compose.yaml                  # local MongoDB single-node replica set + Redis
 ├── public/example.txt            # served at /static
 ├── tests/
 │   ├── helpers/log-capture.js    # Pino ko memory mein capture (tests)
@@ -1120,7 +1223,7 @@ Result: 390/390 purane tests pass (koi naya test nahi), lint aur format clean.
 └── docs/
     ├── architecture/ (overview.md, phases.md, decisions/)
     ├── coverage/EXPRESS_CONCEPT_MATRIX.md
-    ├── modules/ application-foundation.md, routing-and-http.md, middleware.md, error-handling.md, validation-and-api-contracts.md, database-and-persistence.md, authentication.md
+    ├── modules/ application-foundation.md, routing-and-http.md, middleware.md, error-handling.md, validation-and-api-contracts.md, database-and-persistence.md, authentication.md, authorization-and-sessions.md
     └── runbooks/ security/ testing/   # abhi sirf index
 ```
 
@@ -1128,12 +1231,12 @@ Planned: `src/worker.js`, `labs/`, `deploy/`. Layout Phase 2+ mein evolve ho sak
 
 ## 9. Run kaise karein (setup, scripts)
 
-Prerequisites: Node.js >= 24, npm, Docker (local MongoDB ke liye). Redis abhi zaruri nahi.
+Prerequisites: Node.js >= 24, npm, Docker (local MongoDB aur Redis ke liye). Redis sirf browser sessions ke liye; na ho to bearer auth chalta hai.
 
 ```bash
 npm ci
 cp .env.example .env    # MONGODB_URI, DB_POOL_MAX isme hain
-npm run db:up           # Docker mein MongoDB (replica set)
+npm run db:up           # Docker mein MongoDB (replica set) + Redis
 npm run db:migrate && npm run db:seed
 npm run dev             # http://127.0.0.1:3000/health/ready
 ```
@@ -1145,31 +1248,35 @@ npm run dev             # http://127.0.0.1:3000/health/ready
 | `npm test`                         | Jest + Supertest (native ESM, experimental warning normal hai) |
 | `npm run lint`                     | ESLint                                                         |
 | `npm run format` / `format:check`  | Prettier write / check                                         |
-| `npm run db:up` / `db:down`        | Local MongoDB container start / stop                           |
+| `npm run db:up` / `db:down`        | Local MongoDB + Redis containers start / stop                  |
 | `npm run db:migrate` / `db:status` | Migrations apply / status                                      |
 | `npm run db:seed` / `db:reset`     | Sample data / poora DB drop + migrate + seed (dev only)        |
 
 Environment variables: `NODE_ENV` (`development\|test\|production`, default `development`), `HOST` (default `127.0.0.1`), `PORT` (default `3000`, `0` = ephemeral), `LOG_LEVEL` (`trace|debug|info|warn|error|fatal|silent`; default `info`, tests mein `silent`), `MONGODB_URI` (`mongodb://` ya `mongodb+srv://`; **production mein required**, dev/test mein optional: na ho to DB ke bina chalta hai aur warning), `DB_POOL_MAX` (default 10).
 
+**Phase 8 env vars (sab optional):** `REDIS_URL` (`redis://` ya `rediss://`; set ho tabhi `/api/v1/session/*` mount hota hai), `SESSION_SECRET` (>= 32 chars; `REDIS_URL` ke saath production mein required; dev mein na ho to har run par random), `SESSION_IDLE_MINUTES` (default 30, 5-1440), `SESSION_ABSOLUTE_HOURS` (default 12, 1-168), `TRUST_PROXY_HOPS` (default 0, max 5: production mein TLS proxy ke peeche 1 rakho, warna Secure cookie wala session login jaan-boojh ke fail hota hai).
+
 Endpoints abhi:
 
-| Endpoint                                                      | Response                                                                                                                                                                                 |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /health/live`                                            | `200 {"status":"live"}`                                                                                                                                                                  |
-| `GET /health/ready`                                           | `200 {"status":"ready","checks":{"db":"up"}}` (DB configured ho to), ya `503` (`not_ready` / `shutting_down`)                                                                            |
-| `GET /static/example.txt`                                     | `200 text/plain` (`express.static`, `public/`)                                                                                                                                           |
-| `/api/v1/auth/*`                                              | **Auth** (database ho tab): `signup`, `login`, `refresh`, `logout`, `logout-all`, `me`, `verify-email`, `resend-verification`, `forgot-password`, `reset-password`. Database nahi to 404 |
-| `/api/v1/{users,sellers,products,cart,orders,admin}/*`        | `404` abhi (modules khaali)                                                                                                                                                              |
-| `/api/v1/examples/mailbox`                                    | Dev-only: test mailer ki emails (tokens ke saath); production mein 404                                                                                                                   |
-| `/api/v1/examples/*`                                          | Teaching endpoints (non-production only): `ping`, `echo/:value`, `echo/json`, `echo/form`, `old-notes`, `notes`, `notes/:id`, `notes/:noteId/comments`                                   |
-| `/api/v1/examples/middleware/*`                               | Middleware demos (non-production only): `chain`, `conditional`, `guarded`, `fail`, `app-config`, `stats`                                                                                 |
-| `/api/v1/examples/validation/demo-products` (+ `/:productId`) | Validation demo (non-production only): `GET` list (page, limit, sort, filters, q), `GET` by ObjectId, `POST` create. In-memory sample data                                               |
-| `/api/v1/examples/errors/*`                                   | Error demos (non-production only): `raise/:kind`, `sync-throw`, `async-reject`, `next-err`, `throw-string`, `service/*`, `after-headers`                                                 |
-| anything else                                                 | `404 {"error":{"code":"NOT_FOUND","message":"Resource not found"}}`                                                                                                                      |
+| Endpoint                                                      | Response                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health/live`                                            | `200 {"status":"live"}`                                                                                                                                                                                                                                                                                                                                                      |
+| `GET /health/ready`                                           | `200 {"status":"ready","checks":{"db":"up"}}` (DB configured ho to), ya `503` (`not_ready` / `shutting_down`)                                                                                                                                                                                                                                                                |
+| `GET /static/example.txt`                                     | `200 text/plain` (`express.static`, `public/`)                                                                                                                                                                                                                                                                                                                               |
+| `/api/v1/auth/*`                                              | **Auth** (database ho tab): `signup`, `login`, `refresh`, `logout`, `logout-all`, `me`, `verify-email`, `resend-verification`, `forgot-password`, `reset-password`. Database nahi to 404                                                                                                                                                                                     |
+| `/api/v1/sellers/*`, `/api/v1/products/*`, `/api/v1/admin/*`  | **Phase 8** (database ho tab): `POST /sellers/apply`, `GET /sellers/me`; `POST /products`, `PATCH /products/:id`, `PUT /products/:id/stock`, `POST /products/:id/submit` (approved seller + owner); `/admin/sellers` (+ approve/reject/suspend/reinstate), `/admin/products` (+ approve/reject/archive), `GET /admin/audit-events` (admin only). Bearer token ya cookie+CSRF |
+| `/api/v1/session/*`                                           | **Phase 8** (database + `REDIS_URL` ho tab): `POST login`, `POST logout`, `POST logout-all`, `GET me`, `GET csrf`. Cookie `HttpOnly` + `SameSite=Lax` (production: `Secure` + `__Host-sid`); state-changing requests par `X-CSRF-Token` zaruri                                                                                                                               |
+| `/api/v1/{users,cart,orders}/*`                               | `404` abhi (modules khaali)                                                                                                                                                                                                                                                                                                                                                  |
+| `/api/v1/examples/mailbox`                                    | Dev-only: test mailer ki emails (tokens ke saath); production mein 404                                                                                                                                                                                                                                                                                                       |
+| `/api/v1/examples/*`                                          | Teaching endpoints (non-production only): `ping`, `echo/:value`, `echo/json`, `echo/form`, `old-notes`, `notes`, `notes/:id`, `notes/:noteId/comments`                                                                                                                                                                                                                       |
+| `/api/v1/examples/middleware/*`                               | Middleware demos (non-production only): `chain`, `conditional`, `guarded`, `fail`, `app-config`, `stats`                                                                                                                                                                                                                                                                     |
+| `/api/v1/examples/validation/demo-products` (+ `/:productId`) | Validation demo (non-production only): `GET` list (page, limit, sort, filters, q), `GET` by ObjectId, `POST` create. In-memory sample data                                                                                                                                                                                                                                   |
+| `/api/v1/examples/errors/*`                                   | Error demos (non-production only): `raise/:kind`, `sync-throw`, `async-reject`, `next-err`, `throw-string`, `service/*`, `after-headers`                                                                                                                                                                                                                                     |
+| anything else                                                 | `404 {"error":{"code":"NOT_FOUND","message":"Resource not found"}}`                                                                                                                                                                                                                                                                                                          |
 
 ## 10. Verification results (ab tak)
 
-Phase 7 ke end par (main) actual run hue commands (pichhle phases ke checks bhi included):
+Phase 8 ke end par (main) actual run hue commands (pichhle phases ke checks bhi included):
 
 | Command                                                       | Result                                                         |
 | ------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -1191,11 +1298,13 @@ Phase 2 extras: ordering test ka mutation check (order badalne par 1 test fail, 
 
 Comments pass (alag se, Phase ke bahar): 33 JS files mein sirf comments jode gaye; AST compare (comments ke bina HEAD vs working tree) mein 0 code changes; lint, format aur 183 tests pass.
 
+Phase 8 extras: asli server + MongoDB + Redis par **121 manual checks**: 71 authorization (401 / 403 / owner / wrong-owner / admin / audit / role badalte hi turant asar) aur 50 session (cookie flags, session fixation, CSRF ke variants, bearer-vs-session separation, logout / logout-all / password-reset / disable, idle + absolute timeout, rate limit). Mutation checks: ownership comparison hataya to query filter ne bachaya (409); dono layers hataye to product hijack ho gaya (isliye dono rakhe hain); CSRF check hataya to attack chala; `can()` hamesha true karne par privilege escalation. Redis band karke: cookie routes `503` + `Retry-After`, bearer aur public routes theek, `/health/ready` 503, Redis wapas aate hi recovery. Production cookie `__Host-sid; Path=/; HttpOnly; Secure; SameSite=Lax`; `TRUST_PROXY_HOPS` ke bina Secure login generic 500 + log mein wajah; `SESSION_SECRET` ke bina production exit 1; `REDIS_URL` ke bina `/session/*` 404; logs/audit mein koi secret nahi. Koi naya test nahi likha (owner decision): 390 purane tests pass.
+
 Phase 7 extras: asli server + MongoDB par 60 auth checks (enumeration, token attacks, refresh reuse, reset, disabled/unverified, rate limits, timing 23.3 vs 22.2 ms, DB/logs mein koi secret nahi); startup scenarios (secret ke bina dev warning, production mein secret/https ke bina exit 1, database ke bina /auth 404); koi naya automated test nahi.
 
 Phase 6 extras (MongoDB 8.3.13 replica set, Docker): `db:migrate` ek baar apply + dobara no-op; `db:seed` do baar = same counts; 19 constraint checks (validators `121`, duplicates `11000`, partial indexes); repositories/transactions/error-mapping probe (60+ checks, sab pass; rollback, retry, atomic reservation, 503 mapping); server readiness up/down/recover, DB band hote hue boot, SIGTERM; config errors (production mein URI ke bina exit 1). Koi naya automated test nahi (owner ka rule): evidence `docs/modules/database-and-persistence.md` mein.
 
-Environment-dependent checks: MongoDB (Docker) ab zaruri hai DB features verify karne ke liye; Redis abhi applicable nahi.
+Environment-dependent checks: MongoDB (Docker) ab zaruri hai DB features verify karne ke liye; Redis ab Phase 8 ke session checks ke liye zaruri hai (`npm run db:up` dono chalata hai).
 
 ## 11. Roadmap (Phase 0–25)
 
@@ -1209,8 +1318,8 @@ Environment-dependent checks: MongoDB (Docker) ab zaruri hai DB features verify 
 | 5   | Validation, pagination (OpenAPI + Swagger: branch par, baad mein merge)           | done    |
 | 6   | MongoDB + Mongoose: models, validators, migrations, repositories, transactions    | done    |
 | 7   | Authentication (hashing, refresh rotation, verify/reset)                          | done    |
-| 8   | Authorization, ownership, sessions, CSRF                                          | next    |
-| 9   | Catalog, inventory concurrency, reviews, wishlists                                | planned |
+| 8   | Authorization, ownership, sessions, CSRF                                          | done    |
+| 9   | Catalog, inventory concurrency, reviews, wishlists                                | next    |
 | 10  | Cart, checkout, idempotency, order state machine                                  | planned |
 | 11  | Security hardening + threat model                                                 | planned |
 | 12  | Uploads (Multer), storage adapters, CSV streaming                                 | planned |
@@ -1232,11 +1341,11 @@ Detail: [docs/architecture/phases.md](docs/architecture/phases.md).
 
 ## 12. Concept coverage matrix ka status
 
-[docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md): 234 concepts. Abhi sections 1-4 (44), section 5 (8 of 10: OpenAPI aur Swagger branch par), section 6 (12 of 13: "Test database isolation" `planned`) aur section 7 (Authentication, 12) `verified`: kul **76 verified**. Baaki `planned`. Har phase ke baad sirf evidence-backed rows update hote hain.
+[docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md): 234 concepts. Abhi sections 1-4 (44), section 5 (8 of 10: OpenAPI aur Swagger branch par), section 6 (12 of 13: "Test database isolation" `planned`), section 7 (Authentication, 12) aur section 8 (Authorization aur sessions, 10) `verified`: kul **86 verified**. Baaki `planned`. Har phase ke baad sirf evidence-backed rows update hote hain.
 
 ## 13. Is project ko recipe ki tarah reuse karna
 
-Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 ka reusable sequence:
+Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 ka reusable sequence:
 
 1. Pehle `CLAUDE.md` + docs skeleton + coverage matrix banao (rules aur tracking pehle, code baad mein).
 2. `npm init`, `"type": "module"`, `engines` set karo; dependencies `--save-exact`; lockfile commit.
@@ -1264,6 +1373,10 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 ka reusable s
 24. Server DB ke bina bhi start ho (background connect retry), readiness `db` check se 503/200 de, shutdown mein DB sabse aakhir mein band. Search text regex-escape karo.
 25. Auth: passwords Argon2id, access token chhota stateless JWT (algorithm pinned), refresh/verify/reset random tokens sirf SHA-256 hash ke roop mein; refresh rotation + reuse detection; single-use atomic `consume`; sab failures generic; email transaction ke baad.
 26. Anti-enumeration: signup/forgot/resend ek jaisa 202, login ek jaisa 401 + dummy hash timing, status sirf sahi password ke baad. Rate limit ko interface (hook) ke peeche rakho (in-memory abhi, Redis baad mein).
+27. Authorization authentication se alag: permission map (default deny), role har request par DB se (role badalte hi asar), `requirePermission`; sirf role kaafi nahi: ownership check **service mein bhi aur DB query filter mein bhi** (defense in depth); wrong-owner par 404/403 policy ek jagah.
+28. Admin kaam state machine se (seller: approve/reject/suspend/reinstate; product moderation) aur har sensitive action audit event: kaun, kya, kis par, kab, bina secret.
+29. Browser path alag: Redis-backed `express-session`; cookie `HttpOnly` + `SameSite=Lax` (+ `Secure`/`__Host-` production mein), login par `regenerate` (fixation), idle + absolute timeout, CSRF token + Origin check, bearer aur cookie ek hi request mein mix nahi (Authorization header ho to sirf bearer). Redis down = 503, data corruption nahi.
+30. Safety pieces ko mutation se test karo aur hamesha assert karo ki mutation lagi aur attacker sach mein login kar sakta tha (warna "safe" result bekaar hai).
 
 ## 14. Known limitations / tradeoffs
 
@@ -1276,12 +1389,13 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 ka reusable s
 - Migrations ka runner chhota hai: lock nahi, ek hi jagah (deploy step) se chalao; `syncIndexes` purane indexes drop karta hai, aage ki migrations specific index operations se likho.
 - DB tests ke liye strategy documented hai (separate database, cleanup) lekin koi test likhe nahi gaye. Evidence manual verification hai.
 - Branch `feature/openapi-swagger` abhi UUID wale purane `main` par based hai; merge par ObjectId changes conflict de sakte hain.
-- **Auth:** limiter in-memory (per instance, restart par reset); access token revoke nahi hota (15 min tak chalta hai, disabled user ko `/me` aur refresh rokte hain); refresh body mein hai (browser ke liye HttpOnly cookie session Phase 8); koi MFA/breached-password check/change-password/OAuth nahi (OIDC Phase 16); `req.ip` trust proxy ke bina socket address hai (Phase 11).
+- **Auth:** limiter in-memory (per instance, restart par reset); access token revoke nahi hota (15 min tak chalta hai, disabled user ko `/me` aur refresh rokte hain); refresh body mein hai (browser ke liye alag cookie session path Phase 8 mein bana, bearer se bilkul alag); koi MFA/breached-password check/change-password/OAuth nahi (OIDC Phase 16); `req.ip` ke liye `TRUST_PROXY_HOPS` sahi set karna zaruri hai (poora proxy/CORS hardening Phase 11).
+- **Authorization/Sessions:** permission map code mein hai (DB-managed roles nahi); har protected request par user DB se padha jata hai (ek extra read, badle mein role/disable turant lagta hai); session registry per user `sess_user:<id>` Redis mein hai (Redis flush = sab sessions khatam); CSRF/Origin check sirf cookie path par; Redis single instance (HA/cluster nahi); product moderation abhi simple (approve/reject/archive + note), review queue/notifications baad ke phases mein; audit events ke liye retention/export policy abhi nahi.
 - **Email:** abhi sirf test mailer (memory mein); production mein verification/reset emails deliver nahi hoti jab tak provider adapter na lage (startup par warning).
 - Concurrent refresh (ek token se do requests) loser ko reuse maanke family revoke kar deta hai: clients ek token se parallel refresh na karein.
 - Offset pagination deep pages par slow hai (`page` max 10000); cursor pagination abhi nahi bani.
 - Unexpected-error logs mein asli error message aata hai; Pino redaction sirf known keys ko cover karti hai, to error messages secrets se mat banao.
-- Rate limiting, authentication/authorization errors ke classes bane hain lekin unhe throw karne wale features aage ke phases mein.
+- Rate limiting: sirf auth/session login par in-memory hook hai; global/IP-based limiting Phase 11 mein.
 - `/api/v1/examples` abhi inline Zod use karta hai; shared validation + response convention Phase 5 mein. Examples in-memory hain aur production mein mount nahi hote.
 - Query values strings hote hain; typed coercion/validation Phase 5 mein.
 - Logging Pino hai, lekin metrics, Sentry, trace propagation aur dashboards Phase 19 mein. Config-error message (logger banne se pehle) `console.error` hai.
@@ -1301,7 +1415,7 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 ka reusable s
 | `.env` badalne par kuch nahi badla                                                             | `npm run dev` `.env` change par restart nahi karta; manually restart karo. Aur shell mein pehle se set env var `.env` ko override kar deta hai (dotenv override nahi karta).                                                                                                                                                           |
 | `npm test` par `ExperimentalWarning: VM Modules`                                               | Normal hai: Jest native ESM `--experimental-vm-modules` se chalta hai.                                                                                                                                                                                                                                                                 |
 | Test mein `jest is not defined`                                                                | ESM mein `jest` global nahi; `import { jest } from '@jest/globals'` karo.                                                                                                                                                                                                                                                              |
-| `GET /api/v1/auth/login` 404 kyun deta hai?                                                    | Module abhi khaali hai (Phase 7 mein bhara jayega). Fake endpoint nahi banate.                                                                                                                                                                                                                                                         |
+| `GET /api/v1/auth/login` 404 kyun deta hai?                                                    | `login` `POST` hai (GET nahi), aur auth module sirf tab mount hota hai jab `MONGODB_URI` set ho; uske bina poora `/auth` 404 hai. Sahi call: `POST /api/v1/auth/login`.                                                                                                                                                                |
 | `/api/v1/examples/*` production mein 404 kyun?                                                 | Teaching endpoints sirf `NODE_ENV !== 'production'` mein mount hote hain.                                                                                                                                                                                                                                                              |
 | `/notes/abc` par 400 kyun?                                                                     | `requireNumericParam('id')` route middleware positive integer maangta hai. Express 5 mein inline regex (`:id(\\d+)`) support nahi.                                                                                                                                                                                                     |
 | Tests mein logs kyun nahi dikhte?                                                              | `NODE_ENV=test` par `LOG_LEVEL` default `silent` hai. Dekhna ho to `LOG_LEVEL=debug npm test`, ya test mein `createLogCapture()` use karo.                                                                                                                                                                                             |
@@ -1320,6 +1434,15 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 ka reusable s
 | `findOneAndUpdate` par `new` option ka warning                                                 | Mongoose 9 mein `{ new: true }` ki jagah `{ returnDocument: 'after' }`.                                                                                                                                                                                                                                                                |
 | Login `403 EMAIL_NOT_VERIFIED` deta hai                                                        | Pehle email verify karo. Dev mein link `GET /api/v1/examples/mailbox?to=<email>` se milta hai (test mailer). Seed users already verified hain.                                                                                                                                                                                         |
 | Seed users se login kaise karun?                                                               | `SEED_PASSWORD='kuch-lamba-123' npm run db:seed` (password >= 12 chars), phir `customer@shopsphere.test` se login. Ya forgot-password flow se mailbox ka link lekar password set karo.                                                                                                                                                 |
+| 401 aur 403 mein kya farq hai?                                                                 | 401 = "tum kaun ho pata nahi" (token/cookie nahi ya galat). 403 = "pata hai tum kaun ho, par ye kaam tumhara nahi" (role/permission/seller approval). Dusre seller ka product: 404/403 policy (`ownership.js`).                                                                                                                        |
+| Seller ko `403 SELLER_NOT_APPROVED`                                                            | Seller profile abhi `PENDING` hai. Admin `POST /api/v1/admin/sellers/:id/approve` (body `{}`) karega tab product bana payega.                                                                                                                                                                                                          |
+| `POST .../approve` par `415`                                                                   | Body-less POST par bhi JSON content-type aur `{}` body chahiye (strict body schema). `-H 'Content-Type: application/json' -d '{}'`.                                                                                                                                                                                                    |
+| Cookie wali request par `403 CSRF_TOKEN_INVALID`                                               | State-changing request (POST/PUT/PATCH/DELETE) par `X-CSRF-Token` header zaruri hai: pehle `GET /api/v1/session/csrf` se token lo (session ke saath bound). Origin bhi allowed hona chahiye.                                                                                                                                           |
+| `/api/v1/session/*` 404 deta hai                                                               | `REDIS_URL` set nahi (ya database nahi). `npm run db:up` chalao aur `.env` mein `REDIS_URL=redis://127.0.0.1:6379` rakho.                                                                                                                                                                                                              |
+| Session login production mein 500 deta hai                                                     | Secure cookie sirf HTTPS request par set ho sakti hai. Proxy ke peeche ho to `TRUST_PROXY_HOPS=1` set karo aur proxy `X-Forwarded-Proto: https` bheje. Server log mein wajah likhi hoti hai.                                                                                                                                           |
+| Cookie requests `503` deti hain par bearer chalta hai                                          | Redis down hai (by design: sessions nahi, baaki API theek). `docker compose ps` dekho, `npm run db:up`. Redis wapas aate hi apne aap theek.                                                                                                                                                                                            |
+| Naya permission kaise add karun?                                                               | `src/modules/authz/permissions.js` mein `PERMISSIONS` + `ROLE_PERMISSIONS` map, route par `requirePermission(...)`, aur ownership wala resource ho to `ownership.js` ka check. Detail: `docs/modules/authorization-and-sessions.md`.                                                                                                   |
+| Role badla par purana token chal raha hai?                                                     | Role token se nahi, DB se har request par padha jata hai, isliye role badalte hi naya role lagta hai.                                                                                                                                                                                                                                  |
 | Server restart ke baad purana access token 401 deta hai                                        | `AUTH_JWT_SECRET` set nahi hai to har run par naya random secret banta hai. `.env` mein fixed secret do.                                                                                                                                                                                                                               |
 | Login par achanak `429`                                                                        | 5 galat koshishon ke baad (email+ip) 15 min lock; `Retry-After` header dekho. Limiter in-memory hai: server restart se reset ho jaata hai.                                                                                                                                                                                             |
 | Refresh karte hi `401` jabki token naya tha                                                    | Token ek hi baar chalta hai (rotation). Purana/dobara use hua to poori session family revoke ho jaati hai; dobara login karo. Ek token se parallel refresh mat karo.                                                                                                                                                                   |
@@ -1335,14 +1458,14 @@ Naye Express 5 project ke liye Phase 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 ka reusable s
 
 ## 16. Docs index
 
-| Area                  | Where                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Working rules         | [CLAUDE.md](CLAUDE.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md)                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Phase plan            | [docs/architecture/phases.md](docs/architecture/phases.md)                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ADRs                  | [docs/architecture/decisions/](docs/architecture/decisions/README.md)                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Module docs           | [docs/modules/](docs/modules/README.md) (abhi: [application-foundation](docs/modules/application-foundation.md), [routing-and-http](docs/modules/routing-and-http.md), [middleware](docs/modules/middleware.md), [error-handling](docs/modules/error-handling.md), [validation-and-api-contracts](docs/modules/validation-and-api-contracts.md), [database-and-persistence](docs/modules/database-and-persistence.md), [authentication](docs/modules/authentication.md)) |
-| Runbooks              | [docs/runbooks/](docs/runbooks/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Security              | [docs/security/](docs/security/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Test strategy         | [docs/testing/](docs/testing/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Concept matrix        | [docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md)                                                                                                                                                                                                                                                                                                                                                                                       |
+| Area                  | Where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Working rules         | [CLAUDE.md](CLAUDE.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Architecture overview | [docs/architecture/overview.md](docs/architecture/overview.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Phase plan            | [docs/architecture/phases.md](docs/architecture/phases.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ADRs                  | [docs/architecture/decisions/](docs/architecture/decisions/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Module docs           | [docs/modules/](docs/modules/README.md) (abhi: [application-foundation](docs/modules/application-foundation.md), [routing-and-http](docs/modules/routing-and-http.md), [middleware](docs/modules/middleware.md), [error-handling](docs/modules/error-handling.md), [validation-and-api-contracts](docs/modules/validation-and-api-contracts.md), [database-and-persistence](docs/modules/database-and-persistence.md), [authentication](docs/modules/authentication.md), [authorization-and-sessions](docs/modules/authorization-and-sessions.md)) |
+| Runbooks              | [docs/runbooks/](docs/runbooks/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Security              | [docs/security/](docs/security/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Test strategy         | [docs/testing/](docs/testing/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Concept matrix        | [docs/coverage/EXPRESS_CONCEPT_MATRIX.md](docs/coverage/EXPRESS_CONCEPT_MATRIX.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

@@ -41,6 +41,7 @@ const PUBLIC_DIR = path.join(import.meta.dirname, '..', 'public');
  * @param {object} options.config loadConfig() se aaya validated config
  * @param {object} [options.readiness] readiness tracker; default: bina kisi dependency check ke wala
  * @param {object} [options.logger] pino logger; default: config.logLevel se bana hua
+ * @param {object} [options.redis] createRedis() ka result (ho to browser sessions chalte hain)
  * @param {object} [options.database] createDatabase() ka result (ho to); routes/services isse `req.app.locals.database` se lete hain
  *
  * `readiness` aur `logger` parameters isliye hain ki tests apne fake/capture wale pass kar sakein.
@@ -50,11 +51,16 @@ export function createApp({
   readiness = createReadiness(),
   logger = createLogger({ level: config.logLevel }),
   database,
+  redis,
 }) {
   const app = express();
 
   // Response se `X-Powered-By: Express` header hata deta hai (attacker ko framework ka pata kyun dena).
   app.disable('x-powered-by');
+
+  // Reverse proxy (Nginx/load balancer) ke peeche kitne hops: Express `X-Forwarded-For/Proto` par tabhi bharosa karta hai. Iske bina
+  // `req.ip` proxy ka IP hota hai aur HTTPS-terminating proxy ke peeche Secure session cookie set nahi hoti. 0 = bharosa nahi.
+  if (config.trustProxyHops > 0) app.set('trust proxy', config.trustProxyHops);
 
   // `app.locals` = poori app ke liye shared (read-only jaisa) store.
   // Kisi bhi handler/router mein `req.app.locals.config` se config mil jata hai, import kiye bina.
@@ -93,7 +99,7 @@ export function createApp({
 
   // Saare API routes `/api/v1` ke neeche. Body parsers aur module routers is router ke andar hain
   // (src/routes/api.routes.js), isliye parsing sirf API requests par hoti hai.
-  app.use('/api/v1', createApiRouter({ config, database, logger }));
+  app.use('/api/v1', createApiRouter({ config, database, redis, logger }));
 
   // 4. Aakhir mein 404: ye normal middleware hai (NotFoundError bana ke errorHandler ko deta hai). Yahan tak sirf wahi request pahunchti hai jise upar
   //    kisi ne handle nahi kiya. Isse upar koi route add karna hai to router ke andar karo; `createApp()` ke

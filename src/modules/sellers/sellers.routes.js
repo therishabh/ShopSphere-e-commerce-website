@@ -1,14 +1,25 @@
-// Sellers module ke routes. Abhi jaan-boojh kar khaali hai.
-// Module mounted hai (src/routes/api.routes.js mein /api/v1/sellers par), isliye URL space reserved hai,
-// lekin jab tak iska phase implement nahi hota koi endpoint expose nahi hota: fake endpoint banane se
-// behtar hai ki request seedha 404 par jaye. Endpoints yahan aayenge: router.get/post(...).
-import { Router } from 'express';
+// Sellers ke routes (`/api/v1/sellers/...`). Database nahi to khaali router (fake endpoint nahi).
+//
+// Har route: authenticate (bearer YA session) -> requirePermission -> validate -> controller.
 
-/**
- * Sellers routes. Intentionally empty: the module is mounted so the URL space is
- * reserved and wired, but it exposes no endpoints until its phase implements them.
- */
-export function createSellersRouter() {
-  // Khaali Router: koi route register nahi, isliye har request aage ke 404 handler tak chali jaati hai.
-  return Router();
+import { Router } from 'express';
+import { validate } from '../../http/validate.js';
+import { PERMISSIONS } from '../authz/permissions.js';
+import { applyBody } from './sellers.schemas.js';
+
+export function createSellersRouter(deps) {
+  const router = Router();
+  if (!deps) return router;
+  const { controller, authenticate, requirePermission } = deps;
+
+  router.post(
+    '/apply',
+    authenticate,
+    requirePermission(PERMISSIONS.SELLER_APPLY),
+    validate({ body: applyBody }),
+    controller.apply,
+  );
+  router.get('/me', authenticate, requirePermission(PERMISSIONS.SELLER_READ_OWN), controller.me);
+
+  return router;
 }

@@ -6,6 +6,7 @@ import { createOneTimeTokenRepository } from './one-time-tokens.repository.js';
 import { createOutboxRepository } from './outbox.repository.js';
 import { createProductRepository } from './products.repository.js';
 import { createRefreshTokenRepository } from './refresh-tokens.repository.js';
+import { createSellerProfileRepository } from './seller-profiles.repository.js';
 import { createSequenceRepository } from './sequences.repository.js';
 import { createUserRepository } from './users.repository.js';
 
@@ -18,6 +19,7 @@ export function createRepositories(models) {
     outbox: createOutboxRepository(models),
     sequences: createSequenceRepository(models),
     refreshTokens: createRefreshTokenRepository(models),
+    sellerProfiles: createSellerProfileRepository(models),
     oneTimeTokens: createOneTimeTokenRepository(models),
   };
 }

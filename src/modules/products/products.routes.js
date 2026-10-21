@@ -1,14 +1,52 @@
-// Products module ke routes. Abhi jaan-boojh kar khaali hai.
-// Module mounted hai (src/routes/api.routes.js mein /api/v1/products par), isliye URL space reserved hai,
-// lekin jab tak iska phase implement nahi hota koi endpoint expose nahi hota: fake endpoint banane se
-// behtar hai ki request seedha 404 par jaye. Endpoints yahan aayenge: router.get/post(...).
-import { Router } from 'express';
+// Products ke routes (`/api/v1/products/...`). Phase 8 mein sirf seller ke ownership-protected mutations hain; public catalog
+// (list/search/detail), reviews, wishlist Phase 9 mein. Database nahi to khaali router.
+//
+// Har route: authenticate (bearer YA session) -> requirePermission -> validate -> controller (ownership service mein).
 
-/**
- * Products routes. Intentionally empty: the module is mounted so the URL space is
- * reserved and wired, but it exposes no endpoints until its phase implements them.
- */
-export function createProductsRouter() {
-  // Khaali Router: koi route register nahi, isliye har request aage ke 404 handler tak chali jaati hai.
-  return Router();
+import { Router } from 'express';
+import { validate } from '../../http/validate.js';
+import { PERMISSIONS } from '../authz/permissions.js';
+import {
+  createProductBodySchema,
+  productIdParamsSchema,
+  stockBodySchema,
+  updateProductBodySchema,
+} from './products.schemas.js';
+
+export function createProductsRouter(deps) {
+  const router = Router();
+  if (!deps) return router;
+  const { controller, authenticate, requirePermission } = deps;
+  const params = validate({ params: productIdParamsSchema });
+
+  router.post(
+    '/',
+    authenticate,
+    requirePermission(PERMISSIONS.PRODUCT_CREATE),
+    validate({ body: createProductBodySchema }),
+    controller.create,
+  );
+  router.patch(
+    '/:productId',
+    authenticate,
+    requirePermission(PERMISSIONS.PRODUCT_UPDATE_OWN),
+    validate({ params: productIdParamsSchema, body: updateProductBodySchema }),
+    controller.update,
+  );
+  router.put(
+    '/:productId/stock',
+    authenticate,
+    requirePermission(PERMISSIONS.INVENTORY_UPDATE_OWN),
+    validate({ params: productIdParamsSchema, body: stockBodySchema }),
+    controller.setStock,
+  );
+  router.post(
+    '/:productId/submit',
+    authenticate,
+    requirePermission(PERMISSIONS.PRODUCT_SUBMIT_OWN),
+    params,
+    controller.submit,
+  );
+
+  return router;
 }

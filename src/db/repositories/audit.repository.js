@@ -27,6 +27,23 @@ function findForbiddenKey(value) {
 
 export function createAuditRepository({ AuditEvent }) {
   return {
+    /** Admin ke liye audit trail: filters (entityType, entityId, action, actorId), sort, pagination. */
+    async list(query) {
+      const filter = {};
+      for (const key of ['entityType', 'entityId', 'action', 'actorId']) {
+        if (query.filters[key] !== undefined) filter[key] = query.filters[key];
+      }
+      const sort = Object.fromEntries([
+        ...query.sort.map((s) => [s.column, s.direction === 'asc' ? 1 : -1]),
+        ['_id', 1],
+      ]);
+      const [rows, total] = await Promise.all([
+        AuditEvent.find(filter).sort(sort).skip(query.offset).limit(query.limit).lean(),
+        AuditEvent.countDocuments(filter),
+      ]);
+      return { items: rows.map((row) => serialize(row)), total };
+    },
+
     /**
      * @param {object} event
      * @param {string|null} event.actorId  kisne kiya (system action ho to null)

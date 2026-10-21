@@ -20,8 +20,9 @@ const HOUR_MS = 60 * MINUTE_MS;
  * @param {object} deps.database  connected (ya connecting) createDatabase() ka result
  * @param {import('pino').Logger} deps.logger
  * @param {object} deps.mailer
+ * @param {{ revokeAll: (userId: string) => Promise<number> }} [deps.sessions]  browser sessions registry (Redis ho tab)
  */
-export function createAuthModule({ config, database, logger, mailer }) {
+export function createAuthModule({ config, database, logger, mailer, sessions }) {
   let secret = config.auth.jwtSecret;
   if (!secret) {
     // Dev/test mein secret na ho to har startup par naya random secret (production mein config isse pehle hi rok deti hai).
@@ -59,6 +60,7 @@ export function createAuthModule({ config, database, logger, mailer }) {
     limiters,
     config,
     logger,
+    sessions,
   });
   const authenticate = createAuthenticate(tokens);
   const controller = createAuthController({ authService });

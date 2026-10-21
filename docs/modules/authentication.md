@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Account identity for ShopSphere: signup, email verification, login, access-token verification, refresh-token rotation and revocation, logout, and password reset. This module answers "who are you". "What may you do" (roles, ownership) is Phase 8.
+Account identity for ShopSphere: signup, email verification, login, access-token verification, refresh-token rotation and revocation, logout, and password reset. This module answers "who are you". "What may you do" (roles, permissions, ownership) is covered in [authorization-and-sessions.md](authorization-and-sessions.md).
 
 The auth endpoints need the database (users and tokens are stored there). Without `MONGODB_URI` the auth router stays empty and every `/api/v1/auth/*` request is a `404` (no fake endpoints).
 
@@ -62,7 +62,7 @@ Access token: `Authorization: Bearer` header. Refresh token: JSON body (request 
 | Bearer header + body refresh token (chosen) | no cookies means no CSRF on these endpoints; works for mobile apps, SPAs and scripts. Cost: a script-readable refresh token in browser storage is exposed to XSS |
 | HttpOnly cookie for refresh                 | not readable by JS (better against XSS) but cookie-authenticated endpoints need CSRF protection (SameSite, CSRF token)                                           |
 
-The browser-oriented path (HttpOnly Secure SameSite cookie session in Redis plus CSRF protection) is built separately in Phase 8, kept apart from bearer auth. Clients that store tokens in a browser should prefer that path.
+The browser-oriented path (HttpOnly Secure SameSite cookie session in Redis plus CSRF protection) exists separately (`/api/v1/session/*`, see [authorization-and-sessions.md](authorization-and-sessions.md)), kept apart from bearer auth. Clients that store tokens in a browser should prefer that path.
 
 ## Account policy
 
@@ -95,7 +95,7 @@ Status is revealed only after the password is proven, so it cannot be used to pr
 | mail per email            | 3 / hour    | every signup/forgot/resend request |
 | mail per ip               | 20 / hour   | every signup/forgot/resend request |
 
-Exceeded: `429 RATE_LIMITED` with `Retry-After`. The per-pair key means a stranger cannot lock someone out just by typing their email from another address; the email-wide limit caps distributed guessing. Limits are per process and reset on restart. `req.ip` is the socket address until `trust proxy` is configured (Phase 11).
+Exceeded: `429 RATE_LIMITED` with `Retry-After`. The per-pair key means a stranger cannot lock someone out just by typing their email from another address; the email-wide limit caps distributed guessing. Limits are per process and reset on restart. `req.ip` is the socket address unless `TRUST_PROXY_HOPS` is set for the reverse proxy in front (full hardening: Phase 11).
 
 ## Passwords
 
@@ -160,5 +160,5 @@ Observed (60 checks, all as expected):
 
 - In-memory limiter and per-process state; Redis-backed limiter in a later phase.
 - No MFA, no breached-password check, no "change password while logged in" and no OAuth login yet (OIDC is Phase 16).
-- Refresh token in the response body suits API clients; a browser-safe cookie session is Phase 8.
+- Refresh token in the response body suits API clients; a browser-safe cookie session exists as `/api/v1/session/*` ([authorization-and-sessions.md](authorization-and-sessions.md)).
 - Emails are test-only until a provider adapter exists.

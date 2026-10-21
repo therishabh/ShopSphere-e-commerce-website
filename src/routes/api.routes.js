@@ -11,6 +11,17 @@ import { createProductsRouter } from '../modules/products/products.routes.js';
 import { createCartRouter } from '../modules/cart/cart.routes.js';
 import { createOrdersRouter } from '../modules/orders/orders.routes.js';
 import { createAdminRouter } from '../modules/admin/admin.routes.js';
+// Authorization (role/permission/ownership), browser sessions (Redis) aur seller/admin/products ke asli modules (Phase 8).
+import { createAuthz } from '../modules/authz/index.js';
+import { createAuthenticateEither } from '../modules/authz/authenticate-either.js';
+import { createSessionModule } from '../modules/session/index.js';
+import { createSessionRegistry } from '../modules/session/session-registry.js';
+import { createSellerService } from '../modules/sellers/sellers.service.js';
+import { createSellersController } from '../modules/sellers/sellers.controller.js';
+import { createAdminService } from '../modules/admin/admin.service.js';
+import { createAdminController } from '../modules/admin/admin.controller.js';
+import { createProductService } from '../modules/products/products.service.js';
+import { createProductsController } from '../modules/products/products.controller.js';
 // Teaching examples: sirf seekhne/demo ke liye, production mein mount nahi hote.
 import { createHttpExamplesRouter } from '../examples/http-examples.routes.js';
 import { createMiddlewareExamplesRouter } from '../examples/middleware-examples.routes.js';
@@ -32,7 +43,7 @@ export const BODY_LIMIT = '100kb';
  *   3. teaching examples (sirf non-production mein)
  * Jo request yahan match nahi hoti wo app-level 404 handler tak jaati hai.
  */
-export function createApiRouter({ config, database, logger }) {
+export function createApiRouter({ config, database, redis, logger }) {
   const api = Router();
   // Emails ke liye abhi sirf test mailer (memory mein jama). Asli provider adapter baad mein isi jagah lagega.
   const mailer = createTestMailer({ logger });
@@ -47,16 +58,66 @@ export function createApiRouter({ config, database, logger }) {
   // Har feature ka router apne prefix par mount hota hai: e.g. /api/v1/auth/...
   // Auth ko users/tokens store karne ke liye database chahiye. Database nahi hai (tests, ya MONGODB_URI set nahi) to auth khaali
   // router rehta hai: koi fake endpoint nahi, request seedha 404.
-  api.use(
-    '/auth',
-    database ? createAuthModule({ config, database, logger, mailer }).router : createAuthRouter(),
-  );
+  //
+  // Composition (jodna): database ho to auth + authz; Redis bhi ho to browser sessions bhi. Kuch na ho to wo hisse khaali routers.
+  let routes = {};
+  if (database) {
+    // Browser sessions (Redis): registry pehle (auth ko password reset par sessions revoke karne ke liye chahiye).
+    const sessionRegistry = redis
+      ? createSessionRegistry({
+          redis: redis.client,
+          absoluteSeconds: config.session.absoluteHours * 3600,
+        })
+      : undefined;
+    const auth = createAuthModule({ config, database, logger, mailer, sessions: sessionRegistry });
+    const session = redis
+      ? createSessionModule({
+          config,
+          database,
+          redis,
+          logger,
+          authService: auth.authService,
+          registry: sessionRegistry,
+        })
+      : undefined;
+    // express-session cookie padhne wala middleware: sirf tab store (Redis) ko chhuta hai jab request mein session cookie ho.
+    if (session) api.use(session.middleware);
+
+    // Bearer YA session: Authorization header ho to sirf bearer, warna cookie (CSRF ke saath). Authorization dono ke baad ek jaisa.
+    const authenticate = createAuthenticateEither({
+      bearer: auth.authenticate,
+      session: session?.authenticate,
+    });
+    const { requirePermission } = createAuthz({ database, logger });
+    const deps = { authenticate, requirePermission };
+    routes = {
+      auth: auth.router,
+      session: session?.router,
+      sellers: createSellersRouter({
+        ...deps,
+        controller: createSellersController({ sellerService: createSellerService({ database }) }),
+      }),
+      products: createProductsRouter({
+        ...deps,
+        controller: createProductsController({
+          productService: createProductService({ database, logger }),
+        }),
+      }),
+      admin: createAdminRouter({
+        ...deps,
+        controller: createAdminController({ adminService: createAdminService({ database }) }),
+      }),
+    };
+  }
+
+  api.use('/auth', routes.auth ?? createAuthRouter());
+  api.use('/session', routes.session ?? Router());
   api.use('/users', createUsersRouter());
-  api.use('/sellers', createSellersRouter());
-  api.use('/products', createProductsRouter());
+  api.use('/sellers', routes.sellers ?? createSellersRouter());
+  api.use('/products', routes.products ?? createProductsRouter());
   api.use('/cart', createCartRouter());
   api.use('/orders', createOrdersRouter());
-  api.use('/admin', createAdminRouter());
+  api.use('/admin', routes.admin ?? createAdminRouter());
 
   // Teaching examples production mein expose nahi hone chahiye (wo real feature nahi hain).
   if (config.env !== 'production') {

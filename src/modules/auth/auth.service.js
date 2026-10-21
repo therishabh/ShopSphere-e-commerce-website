@@ -51,6 +51,8 @@ function toPublicUser(user) {
  * @param {object} deps.tokens  createTokenService()
  * @param {object} deps.mailer  { send(message) }
  * @param {object} deps.limiters  { loginPair, loginIp, loginEmail, mailEmail, mailIp } (attempt limiters)
+ * @param {{ revokeAll: (userId: string) => Promise<number> }} [deps.sessions]  browser sessions ka registry (Redis ho tab); password reset aur
+ *        logout-all par user ke saare sessions band karta hai. Redis nahi hai to no-op.
  * @param {object} deps.config  loadConfig() ka result
  * @param {import('pino').Logger} deps.logger
  */
@@ -62,6 +64,7 @@ export function createAuthService({
   limiters,
   config,
   logger,
+  sessions = { revokeAll: async () => 0 },
 }) {
   const { appBaseUrl, refreshTokenTtlDays } = config.auth;
   const refreshExpiry = () => new Date(Date.now() + refreshTokenTtlDays * DAY_MS);
@@ -115,7 +118,58 @@ export function createAuthService({
     logger.warn({ userId: record.userId }, 'refresh token reuse detected; session family revoked');
   }
 
+  /**
+   * Email + password ki jaanch (bina koi token/session banaye). Order: throttle -> credentials -> account status.
+   * Status checks credentials SAHI hone ke BAAD hote hain: galat password wale ko "disabled/unverified" ka hint nahi milta.
+   * Bearer login (neeche) aur browser session login (src/modules/session) dono yahi use karte hain, isliye rules ek jaise hain.
+   * @returns user (passwordHash ke saath: sirf andar ke use ke liye)
+   */
+  async function checkCredentials({ email, password, ip }) {
+    const checks = loginChecks(email, ip);
+    assertWithinLimits(checks);
+
+    const user = await database.repositories.users.findAuthByEmail(email);
+    // Unknown email par bhi asli verify jitna kaam (timing barabar).
+    const valid = user?.passwordHash
+      ? await passwords.verify(user.passwordHash, password)
+      : await passwords.verifyDummy(password);
+    if (!valid) {
+      recordAll(checks);
+      throw new AuthenticationError('Invalid email or password');
+    }
+
+    if (user.status === 'DISABLED') {
+      throw new AuthorizationError('Account is disabled', { code: 'ACCOUNT_DISABLED' });
+    }
+    if (user.status === 'PENDING_VERIFICATION') {
+      throw new AuthorizationError('Verify your email before logging in', {
+        code: 'EMAIL_NOT_VERIFIED',
+      });
+    }
+
+    // Safal login: is (email, ip) jodi ka counter saaf.
+    limiters.loginPair.reset(`${email}|${ip}`);
+
+    // Hash purane/kamzor parameters par bana ho to ab naye par update (best effort: fail ho to login nahi rukta).
+    if (passwords.needsRehash(user.passwordHash)) {
+      passwords
+        .hash(password)
+        .then((hash) => database.repositories.users.setPasswordHash(user.id, hash))
+        .catch((err) =>
+          logger.error({ errName: err.name, errMessage: err.message }, 'password rehash failed'),
+        );
+    }
+    return user;
+  }
+
   return {
+    /**
+     * Browser session login ke liye: sirf credentials verify karke public user deta hai (koi token nahi banta).
+     */
+    async verifyCredentials(args) {
+      return toPublicUser(await checkCredentials(args));
+    },
+
     /**
      * Signup. Hamesha generic jawab: email naya ho ya pehle se registered. Password hash PEHLE hota hai taaki dono raaston mein
      * (naya/existing) lagbhag same time lage.
@@ -230,39 +284,7 @@ export function createAuthService({
      * Status checks credentials SAHI hone ke BAAD hote hain: galat password wale ko "disabled/unverified" ka hint nahi milta.
      */
     async login({ email, password, ip, userAgent }) {
-      const checks = loginChecks(email, ip);
-      assertWithinLimits(checks);
-
-      const user = await database.repositories.users.findAuthByEmail(email);
-      // Unknown email par bhi asli verify jitna kaam (timing barabar).
-      const valid = user?.passwordHash
-        ? await passwords.verify(user.passwordHash, password)
-        : await passwords.verifyDummy(password);
-      if (!valid) {
-        recordAll(checks);
-        throw new AuthenticationError('Invalid email or password');
-      }
-
-      if (user.status === 'DISABLED')
-        throw new AuthorizationError('Account is disabled', { code: 'ACCOUNT_DISABLED' });
-      if (user.status === 'PENDING_VERIFICATION') {
-        throw new AuthorizationError('Verify your email before logging in', {
-          code: 'EMAIL_NOT_VERIFIED',
-        });
-      }
-
-      // Safal login: is (email, ip) jodi ka counter saaf.
-      limiters.loginPair.reset(`${email}|${ip}`);
-
-      // Hash purane/kamzor parameters par bana ho to ab naye par update (best effort: fail ho to login nahi rukta).
-      if (passwords.needsRehash(user.passwordHash)) {
-        passwords
-          .hash(password)
-          .then((hash) => database.repositories.users.setPasswordHash(user.id, hash))
-          .catch((err) =>
-            logger.error({ errName: err.name, errMessage: err.message }, 'password rehash failed'),
-          );
-      }
+      const user = await checkCredentials({ email, password, ip });
 
       const refresh = generateOpaqueToken();
       await database.transaction(async ({ refreshTokens, audit }) => {
@@ -358,6 +380,7 @@ export function createAuthService({
     async logoutAll({ userId }) {
       const { refreshTokens, audit } = database.repositories;
       await refreshTokens.revokeAllForUser(userId);
+      await sessions.revokeAll(userId);
       await audit.record({
         actorId: userId,
         action: 'auth.logout_all',
@@ -432,6 +455,8 @@ export function createAuthService({
       );
       if (!user) throw invalidToken();
 
+      // Password badla: browser sessions bhi band (refresh tokens transaction ke andar hi revoke ho chuke).
+      await sessions.revokeAll(user.id);
       await sendSafely({
         to: user.email,
         template: 'password-changed',

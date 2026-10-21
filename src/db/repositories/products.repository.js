@@ -61,6 +61,72 @@ export function createProductRepository({ Product }) {
       );
     },
 
+    /** Sirf ownership/status check ke liye halka view: kis seller ka hai aur kis status mein. sellerId string deta hai. */
+    async findOwnerView(id) {
+      const row = await Product.findById(id).select('sellerId status stock').lean();
+      return row
+        ? {
+            id: String(row._id),
+            sellerId: String(row.sellerId),
+            status: row.status,
+            stock: row.stock,
+          }
+        : null;
+    },
+
+    /**
+     * Owner ka update. Filter mein `sellerId` aur allowed `status` dono hain, isliye ownership check mein bug ho to bhi doosre
+     * seller ki row update nahi hoti. @returns updated product ya null (match nahi hua)
+     */
+    async updateByOwner({ id, sellerId, allowedStatuses, set }) {
+      return serialize(
+        await Product.findOneAndUpdate(
+          { _id: id, sellerId, status: { $in: allowedStatuses } },
+          { $set: set },
+          { returnDocument: 'after', runValidators: true },
+        ).lean(),
+      );
+    },
+
+    /**
+     * Stock (onHand) set karna. Filter mein `reserved <= naya onHand` hai: checkout mein ruka hua stock onHand se neeche nahi
+     * ja sakta. Server-side validator bhi yahi rokta hai (dono jagah). Archived product ka stock nahi badalta.
+     */
+    async setStockByOwner({ id, sellerId, onHand }) {
+      return serialize(
+        await Product.findOneAndUpdate(
+          { _id: id, sellerId, status: { $ne: 'ARCHIVED' }, 'stock.reserved': { $lte: onHand } },
+          { $set: { 'stock.onHand': onHand } },
+          { returnDocument: 'after', runValidators: true },
+        ).lean(),
+      );
+    },
+
+    /** Status badalna jab abhi status `from` mein se ho (moderation, submit). `sellerId` do to ownership bhi filter mein judta hai. */
+    async transitionStatus({ id, sellerId, from, to, set = {} }) {
+      return serialize(
+        await Product.findOneAndUpdate(
+          { _id: id, ...(sellerId ? { sellerId } : {}), status: { $in: from } },
+          { $set: { status: to, ...set } },
+          { returnDocument: 'after', runValidators: true },
+        ).lean(),
+      );
+    },
+
+    /** Admin moderation list (status filter, sort, pagination). */
+    async listForAdmin(query) {
+      const filter = query.filters.status ? { status: query.filters.status } : {};
+      const sort = Object.fromEntries([
+        ...query.sort.map((s) => [s.column, s.direction === 'asc' ? 1 : -1]),
+        ['_id', 1],
+      ]);
+      const [rows, total] = await Promise.all([
+        Product.find(filter).sort(sort).skip(query.offset).limit(query.limit).lean(),
+        Product.countDocuments(filter),
+      ]);
+      return { items: rows.map((row) => serialize(row)), total };
+    },
+
     /** Stock product document ke andar hi hai, isliye ek hi write mein product + inventory banta hai (atomic). */
     async create({
       sellerId,

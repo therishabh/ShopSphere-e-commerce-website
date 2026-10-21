@@ -17,6 +17,8 @@ describe('loadConfig', () => {
         accessTokenTtlSeconds: 900,
         refreshTokenTtlDays: 30,
       },
+      session: { idleMinutes: 30, absoluteHours: 12 },
+      trustProxyHops: 0,
     });
   });
 
