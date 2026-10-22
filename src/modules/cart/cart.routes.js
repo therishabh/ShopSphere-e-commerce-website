@@ -1,14 +1,35 @@
-// Cart module ke routes. Abhi jaan-boojh kar khaali hai.
-// Module mounted hai (src/routes/api.routes.js mein /api/v1/cart par), isliye URL space reserved hai,
-// lekin jab tak iska phase implement nahi hota koi endpoint expose nahi hota: fake endpoint banane se
-// behtar hai ki request seedha 404 par jaye. Endpoints yahan aayenge: router.get/post(...).
+// Cart ke routes (`/api/v1/cart`): sab login + `cart:manage:own` permission (customer aur seller; admin 403). Database nahi to khaali
+// router (module mounted rehta hai, par endpoint nahi: 404).
+//   GET    /                    cart + server-side prices/totals + har line ka status
+//   POST   /items               { productId, quantity } add (nayi line 201, quantity badhi 200)
+//   PATCH  /items/:productId    { quantity } set
+//   DELETE /items/:productId    line hatana
+//   DELETE /                    cart khaali
 import { Router } from 'express';
+import { validate } from '../../http/validate.js';
+import { PERMISSIONS } from '../authz/permissions.js';
+import { addCartItemBody, cartProductParams, setCartItemBody } from './cart.schemas.js';
 
-/**
- * Cart routes. Intentionally empty: the module is mounted so the URL space is
- * reserved and wired, but it exposes no endpoints until its phase implements them.
- */
-export function createCartRouter() {
-  // Khaali Router: koi route register nahi, isliye har request aage ke 404 handler tak chali jaati hai.
-  return Router();
+export function createCartRouter(deps) {
+  const router = Router();
+  if (!deps) return router;
+  const { controller, authenticate, requirePermission } = deps;
+  const guard = [authenticate, requirePermission(PERMISSIONS.CART_MANAGE_OWN)];
+
+  router.get('/', ...guard, controller.get);
+  router.post('/items', ...guard, validate({ body: addCartItemBody }), controller.addItem);
+  router.patch(
+    '/items/:productId',
+    ...guard,
+    validate({ params: cartProductParams, body: setCartItemBody }),
+    controller.setQuantity,
+  );
+  router.delete(
+    '/items/:productId',
+    ...guard,
+    validate({ params: cartProductParams }),
+    controller.removeItem,
+  );
+  router.delete('/', ...guard, controller.clear);
+  return router;
 }

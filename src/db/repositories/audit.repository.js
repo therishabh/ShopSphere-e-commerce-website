@@ -44,6 +44,15 @@ export function createAuditRepository({ AuditEvent }) {
       return { items: rows.map((row) => serialize(row)), total };
     },
 
+    /** Ek entity (e.g. ek order) ki poori timeline, purane se naye. Order detail ka "history" yahi se banta hai. */
+    async listForEntity({ entityType, entityId, limit = 100 }) {
+      const rows = await AuditEvent.find({ entityType, entityId })
+        .sort({ createdAt: 1, _id: 1 })
+        .limit(limit)
+        .lean();
+      return rows.map((row) => serialize(row));
+    },
+
     /**
      * @param {object} event
      * @param {string|null} event.actorId  kisne kiya (system action ho to null)

@@ -1,9 +1,13 @@
 // Saari repositories ek jagah. `createRepositories(models)` connection ke models se repositories banata hai.
 
 import { createAuditRepository } from './audit.repository.js';
+import { createCartRepository } from './carts.repository.js';
 import { createCategoryRepository } from './categories.repository.js';
+import { createIdempotencyRepository } from './idempotency.repository.js';
 import { createOneTimeTokenRepository } from './one-time-tokens.repository.js';
+import { createOrderRepository } from './orders.repository.js';
 import { createOutboxRepository } from './outbox.repository.js';
+import { createPaymentAttemptRepository } from './payment-attempts.repository.js';
 import { createProductRepository } from './products.repository.js';
 import { createRefreshTokenRepository } from './refresh-tokens.repository.js';
 import { createReviewRepository } from './reviews.repository.js';
@@ -25,5 +29,9 @@ export function createRepositories(models) {
     oneTimeTokens: createOneTimeTokenRepository(models),
     reviews: createReviewRepository(models),
     wishlist: createWishlistRepository(models),
+    carts: createCartRepository(models),
+    orders: createOrderRepository(models),
+    paymentAttempts: createPaymentAttemptRepository(models),
+    idempotency: createIdempotencyRepository(models),
   };
 }

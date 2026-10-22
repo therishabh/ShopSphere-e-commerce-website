@@ -28,7 +28,14 @@ export const ORDER_STATUSES = Object.freeze([
   'PAYMENT_FAILED',
   'REFUNDED',
 ]);
-export const PAYMENT_ATTEMPT_STATUSES = Object.freeze(['PENDING', 'SUCCEEDED', 'FAILED']);
+// REFUNDED (Phase 10): paisa wapas ho gaya. Order CANCELLED/REFUNDED ho chuka ho par attempt abhi SUCCEEDED ho, to refund baaki hai
+// (reconcile use dobara try karta hai: docs/modules/orders-and-payments.md).
+export const PAYMENT_ATTEMPT_STATUSES = Object.freeze([
+  'PENDING',
+  'SUCCEEDED',
+  'FAILED',
+  'REFUNDED',
+]);
 export const ONE_TIME_TOKEN_PURPOSES = Object.freeze(['EMAIL_VERIFICATION', 'PASSWORD_RESET']);
 export const IDEMPOTENCY_STATUSES = Object.freeze(['IN_PROGRESS', 'COMPLETED']);
 export const OUTBOX_STATUSES = Object.freeze(['PENDING', 'PROCESSING', 'SENT', 'FAILED']);

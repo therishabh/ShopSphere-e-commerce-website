@@ -33,14 +33,16 @@ Edit rules (`products.service.js`): `DRAFT`/`REJECTED` products accept any edita
 
 Stock lives inside the product document (`stock.onHand`, `stock.reserved`; available = onHand - reserved), so every stock change is a single-document update, which MongoDB applies atomically.
 
-| Operation                                          | Query                                                                                                                                              | Guard                           |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| Seller `POST /products/:id/stock/adjust` (`delta`) | `findOneAndUpdate({ _id, sellerId, status != ARCHIVED, $expr: onHand + delta >= reserved and <= 1,000,000 }, { $inc: { 'stock.onHand': delta } })` | filter fails -> `null` -> `409` |
-| Seller `PUT /products/:id/stock` (absolute)        | filter `reserved <= newOnHand`                                                                                                                     | `409`                           |
-| `reserve` (checkout, Phase 10)                     | `{ _id, status: ACTIVE, $expr: onHand - reserved >= qty }` + `$inc reserved`                                                                       | no row -> `null`                |
-| `release`                                          | `{ _id, 'stock.reserved': { $gte: qty } }` + `$inc reserved -qty`                                                                                  | double release -> `null`        |
+| Operation                                                                            | Query                                                                                                                                              | Guard                           |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Seller `POST /products/:id/stock/adjust` (`delta`)                                   | `findOneAndUpdate({ _id, sellerId, status != ARCHIVED, $expr: onHand + delta >= reserved and <= 1,000,000 }, { $inc: { 'stock.onHand': delta } })` | filter fails -> `null` -> `409` |
+| Seller `PUT /products/:id/stock` (absolute)                                          | filter `reserved <= newOnHand`                                                                                                                     | `409`                           |
+| `reserve` (checkout, Phase 10; see [checkout-and-orders.md](checkout-and-orders.md)) | `{ _id, status: ACTIVE, $expr: onHand - reserved >= qty }` + `$inc reserved`                                                                       | no row -> `null`                |
+| `release`                                                                            | `{ _id, 'stock.reserved': { $gte: qty } }` + `$inc reserved -qty`                                                                                  | double release -> `null`        |
+| `commitReservation` (payment ok, Phase 10)                                           | `{ _id, reserved >= qty, onHand >= qty }` + `$inc reserved -qty, onHand -qty`                                                                      | double commit -> `null`         |
+| `restock` (paid order cancelled, Phase 10)                                           | `{ _id, onHand + qty <= 1,000,000 }` + `$inc onHand +qty`                                                                                          | over the cap -> `null`          |
 
-Two independent walls: the conditional filter, and the server-side collection validator `reserved <= onHand` (see [database-and-persistence.md](database-and-persistence.md)), which also applies to `$inc`. `inventory.service.js` (`reserveMany`/`releaseMany`) runs several products in one transaction, ordered by product ID: any failing item aborts the transaction and the items already reserved roll back. No HTTP route calls it yet; Phase 10 checkout does.
+Two independent walls: the conditional filter, and the server-side collection validator `reserved <= onHand` (see [database-and-persistence.md](database-and-persistence.md)), which also applies to `$inc`. `inventory.service.js` exports `reserveItems`/`releaseItems`/`commitItems`/`restockItems` (Phase 10), which run several products in the caller's transaction (checkout and order transitions) ordered by product ID: any failing item aborts the transaction and the items already reserved roll back. They are also wrapped as `reserveMany`... for standalone use.
 
 Review rating changes are also two writes (review row + product summary), so they run in a transaction (`reviews.service.js`); the summary `$inc` serializes concurrent reviews on one product (write conflict -> driver retry).
 
@@ -143,7 +145,7 @@ Mutation checks (each applied, verified applied, then restored):
 - Search is a case-insensitive substring regex on `name` (escaped, so `.*` or `(a+)+$` are literals): it matches partial words but cannot use an index for the match itself. Text index / Atlas Search is Phase 13.
 - Offset pagination plus `total` count: deep pages and big counts get slower (page capped at 10,000).
 - `inStock` uses `$expr` on two fields and cannot use a stock index; denormalize `available` if it becomes hot.
-- Reviews are open to any logged-in customer/seller (not "verified purchase"): orders arrive in Phase 10.
-- `reserve`/`release` have no HTTP route and no reservation expiry yet; checkout, idempotency and expiry are Phase 10/14.
+- Reviews are open to any logged-in customer/seller (not "verified purchase"); linking reviews to delivered orders is not done yet.
+- `reserve`/`release` are used by checkout (Phase 10); stuck reservations of unpaid orders are released by the admin-triggered reconcile, a scheduled job comes in Phase 14.
 - Seller product list sorted by price or name (not by created date) sorts in memory within one seller's products.
 - Rating summary is a cache; if it ever drifts, migration 0002's recompute query rebuilds it from `reviews`.

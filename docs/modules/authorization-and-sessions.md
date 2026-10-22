@@ -13,11 +13,11 @@ Both need the database; sessions also need Redis (`REDIS_URL`). Without a databa
 
 Code never writes `if (role === 'ADMIN')`; routes ask for a permission and the role table decides. Default deny: anything not listed is refused.
 
-| Role     | Permissions                                                                                                                                                                                                  |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| CUSTOMER | `seller:apply`, `seller:read:own`, `review:create`, `review:update:own`, `review:delete:own`, `wishlist:manage:own`                                                                                          |
-| SELLER   | `seller:read:own`, `product:create`, `product:update:own`, `product:submit:own`, `product:read:own`, `product:archive:own`, `inventory:update:own`, `review:create/update/delete:own`, `wishlist:manage:own` |
-| ADMIN    | `admin:seller:review`, `admin:product:moderate`, `admin:audit:read`, `admin:category:manage`, `admin:review:moderate`                                                                                        |
+| Role     | Permissions                                                                                                                                                                                                                                                                                                                           |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CUSTOMER | `seller:apply`, `seller:read:own`, `review:create`, `review:update:own`, `review:delete:own`, `wishlist:manage:own`, `cart:manage:own`, `order:create`, `order:read:own`, `order:cancel:own`                                                                                                                                          |
+| SELLER   | `seller:read:own`, `product:create`, `product:update:own`, `product:submit:own`, `product:read:own`, `product:archive:own`, `inventory:update:own`, `review:create/update/delete:own`, `wishlist:manage:own`, `cart:manage:own`, `order:create`, `order:read:own`, `order:cancel:own`, `seller:order:read:own`, `seller:order:fulfil` |
+| ADMIN    | `admin:seller:review`, `admin:product:moderate`, `admin:audit:read`, `admin:category:manage`, `admin:review:moderate`, `admin:order:read`, `admin:order:manage`                                                                                                                                                                       |
 
 A customer becomes a SELLER only when an admin approves the application (same transaction as the status change). ADMIN deliberately has no seller or customer permissions. A permission ending in `:own` only says the role may do this kind of action; ownership is checked separately.
 

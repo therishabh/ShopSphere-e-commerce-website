@@ -9,7 +9,7 @@ import { createUsersRouter } from '../modules/users/users.routes.js';
 import { createSellersRouter } from '../modules/sellers/sellers.routes.js';
 import { createProductsRouter } from '../modules/products/products.routes.js';
 import { createCartRouter } from '../modules/cart/cart.routes.js';
-import { createOrdersRouter } from '../modules/orders/orders.routes.js';
+import { createAdminOrdersRouter, createOrdersRouter } from '../modules/orders/orders.routes.js';
 import { createAdminRouter } from '../modules/admin/admin.routes.js';
 import { createCategoriesRouter } from '../modules/categories/categories.routes.js';
 import { createReviewsRouter } from '../modules/reviews/reviews.routes.js';
@@ -31,6 +31,12 @@ import { createReviewService } from '../modules/reviews/reviews.service.js';
 import { createReviewsController } from '../modules/reviews/reviews.controller.js';
 import { createWishlistService } from '../modules/wishlist/wishlist.service.js';
 import { createWishlistController } from '../modules/wishlist/wishlist.controller.js';
+// Phase 10: cart, orders (checkout, state machine) aur mock payment provider.
+import { createCartService } from '../modules/cart/cart.service.js';
+import { createCartController } from '../modules/cart/cart.controller.js';
+import { createOrderService } from '../modules/orders/orders.service.js';
+import { createOrdersController } from '../modules/orders/orders.controller.js';
+import { createMockPaymentProvider } from '../payments/mock-payment-provider.js';
 // Teaching examples: sirf seekhne/demo ke liye, production mein mount nahi hote.
 import { createHttpExamplesRouter } from '../examples/http-examples.routes.js';
 import { createMiddlewareExamplesRouter } from '../examples/middleware-examples.routes.js';
@@ -99,6 +105,14 @@ export function createApiRouter({ config, database, redis, logger }) {
     });
     const { requirePermission } = createAuthz({ database, logger });
     const deps = { authenticate, requirePermission };
+    // Orders ka ek controller seedha customer, seller aur admin teeno routers ko jaata hai (service ek hi, rules ek hi jagah).
+    const ordersController = createOrdersController({
+      orderService: createOrderService({
+        database,
+        payments: createMockPaymentProvider({ logger }),
+        logger,
+      }),
+    });
     routes = {
       auth: auth.router,
       session: session?.router,
@@ -134,6 +148,12 @@ export function createApiRouter({ config, database, redis, logger }) {
           wishlistService: createWishlistService({ database }),
         }),
       }),
+      cart: createCartRouter({
+        ...deps,
+        controller: createCartController({ cartService: createCartService({ database }) }),
+      }),
+      orders: createOrdersRouter({ ...deps, controller: ordersController }),
+      adminOrders: createAdminOrdersRouter({ ...deps, controller: ordersController }),
     };
   }
 
@@ -146,8 +166,10 @@ export function createApiRouter({ config, database, redis, logger }) {
   api.use('/wishlist', routes.wishlist ?? createWishlistRouter());
   // Reviews ke paths do alag prefixes par hain (/products/:id/reviews, /reviews/:id), isliye root par mount; poore paths router mein.
   api.use(routes.reviews ?? createReviewsRouter());
-  api.use('/cart', createCartRouter());
-  api.use('/orders', createOrdersRouter());
+  api.use('/cart', routes.cart ?? createCartRouter());
+  api.use('/orders', routes.orders ?? createOrdersRouter());
+  // `/admin/orders` ko `/admin` se pehle mount karo (zyada specific prefix pehle), warna admin router use pehle pakad leta.
+  api.use('/admin/orders', routes.adminOrders ?? createAdminOrdersRouter());
   api.use('/admin', routes.admin ?? createAdminRouter());
 
   // Teaching examples production mein expose nahi hone chahiye (wo real feature nahi hain).

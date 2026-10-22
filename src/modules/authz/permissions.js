@@ -30,6 +30,15 @@ export const PERMISSIONS = Object.freeze({
   ADMIN_SELLER_REVIEW: 'admin:seller:review',
   ADMIN_PRODUCT_MODERATE: 'admin:product:moderate',
   ADMIN_AUDIT_READ: 'admin:audit:read',
+  // Phase 10: cart, orders, seller fulfilment, admin order desk
+  CART_MANAGE_OWN: 'cart:manage:own',
+  ORDER_CREATE: 'order:create',
+  ORDER_READ_OWN: 'order:read:own',
+  ORDER_CANCEL_OWN: 'order:cancel:own',
+  SELLER_ORDER_READ_OWN: 'seller:order:read:own',
+  SELLER_ORDER_FULFIL: 'seller:order:fulfil',
+  ADMIN_ORDER_READ: 'admin:order:read',
+  ADMIN_ORDER_MANAGE: 'admin:order:manage',
 });
 
 // Explicit allow-list: jo yahan nahi likha wo allowed nahi (default deny).
@@ -43,6 +52,11 @@ const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.REVIEW_UPDATE_OWN,
     PERMISSIONS.REVIEW_DELETE_OWN,
     PERMISSIONS.WISHLIST_MANAGE_OWN,
+    // Khareedari (Phase 10): seller bhi khareed sakta hai (apna product nahi: cart/checkout mein rok hai).
+    PERMISSIONS.CART_MANAGE_OWN,
+    PERMISSIONS.ORDER_CREATE,
+    PERMISSIONS.ORDER_READ_OWN,
+    PERMISSIONS.ORDER_CANCEL_OWN,
   ],
   SELLER: [
     PERMISSIONS.SELLER_READ_OWN,
@@ -57,6 +71,14 @@ const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.REVIEW_UPDATE_OWN,
     PERMISSIONS.REVIEW_DELETE_OWN,
     PERMISSIONS.WISHLIST_MANAGE_OWN,
+    // Khareedari (Phase 10): seller bhi khareed sakta hai (apna product nahi: cart/checkout mein rok hai).
+    PERMISSIONS.CART_MANAGE_OWN,
+    PERMISSIONS.ORDER_CREATE,
+    PERMISSIONS.ORDER_READ_OWN,
+    PERMISSIONS.ORDER_CANCEL_OWN,
+    // Seller ke orders dekhna aur ship karna (sirf apne orders: ownership service mein, query mein sellerId filter).
+    PERMISSIONS.SELLER_ORDER_READ_OWN,
+    PERMISSIONS.SELLER_ORDER_FULFIL,
   ],
   ADMIN: [
     PERMISSIONS.ADMIN_SELLER_REVIEW,
@@ -64,6 +86,8 @@ const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.ADMIN_AUDIT_READ,
     PERMISSIONS.ADMIN_CATEGORY_MANAGE,
     PERMISSIONS.ADMIN_REVIEW_MODERATE,
+    PERMISSIONS.ADMIN_ORDER_READ,
+    PERMISSIONS.ADMIN_ORDER_MANAGE,
   ],
 });
 

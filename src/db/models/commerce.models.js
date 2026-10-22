@@ -3,7 +3,10 @@
 // Design choice (embedding vs referencing):
 //  - Cart items cart ke andar embedded (cart ke bina unka matlab nahi, aur hamesha saath padhe jaate hain).
 //  - Order items order ke andar embedded SNAPSHOT: naam, sku, price copy hote hain, taaki product baad mein badle ya
-//    archive ho to bhi purana order sahi dikhe. Seller ke orders `items.sellerId` multikey index se milte hain.
+//    archive ho to bhi purana order sahi dikhe. Seller ke orders `sellerId` index se milte hain (Phase 10).
+//  - Phase 10: checkout seller + currency ke hisaab se alag orders banata hai (ek order = ek seller = ek currency), isliye order ka
+//    status machine seedha seller ke kaam se jud jaata hai aur multi-seller order mein "kiska status?" ka sawal hi nahi uthta.
+//    Ek checkout ke saare orders `checkoutId` se jude hain.
 //  - Payment attempts alag collection: ek order ki kai attempts ho sakti hain aur webhooks unhe alag se update karte hain.
 
 import { Schema, integer, ref, schemaOptions } from './shared.js';
@@ -68,7 +71,13 @@ export const orderSchema = new Schema(
     // Insaan ke padhne layak order number (support/invoice ke liye); `_id` internal rehta hai. `counters` se aata hai.
     number: integer({ min: 1 }),
     userId: ref('User'),
+    // Is order ka seller (saare items usi ke hain: neeche pre-validate check). Seller ke orders isi se milte hain.
+    sellerId: ref('SellerProfile'),
+    // Ek checkout (ek Idempotency-Key) ke saare orders ka saanjha id. Idempotency record ka `_id` (string).
+    checkoutId: { type: String, required: true },
     status: { type: String, enum: ORDER_STATUSES, default: 'PENDING_PAYMENT', required: true },
+    // Status kab badla (reconcile "kitni der se PENDING_PAYMENT hai" yahin se dekhta hai aur UI "last updated" dikha sakti hai).
+    statusChangedAt: { type: Date, required: true, default: () => new Date() },
     currency: { type: String, enum: CURRENCIES, required: true },
     subtotalCents: integer({ min: 0 }),
     shippingCents: integer({ min: 0, default: 0 }),
@@ -88,6 +97,9 @@ export const orderSchema = new Schema(
 );
 // Amounts ka hisaab mel khana chahiye. (Server-side collection validator bhi totals ko enforce karta hai.)
 orderSchema.pre('validate', function checkTotals() {
+  if (this.items.some((item) => String(item.sellerId) !== String(this.sellerId))) {
+    this.invalidate('items', 'every item must belong to the order seller');
+  }
   const lines = this.items.reduce((sum, item) => sum + item.lineTotalCents, 0);
   if (this.items.some((item) => item.lineTotalCents !== item.unitPriceCents * item.quantity)) {
     this.invalidate('items', 'lineTotalCents must equal unitPriceCents * quantity');
@@ -101,8 +113,11 @@ orderSchema.pre('validate', function checkTotals() {
 orderSchema.index({ number: 1 }, { unique: true });
 orderSchema.index({ userId: 1, createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
-// Seller ke orders: multikey index (array ke har element ka sellerId index hota hai).
-orderSchema.index({ 'items.sellerId': 1, createdAt: -1 });
+// Seller ke orders (Phase 10: ek order = ek seller, isliye sadharan index; pehle multikey `items.sellerId` tha).
+orderSchema.index({ sellerId: 1, createdAt: -1 });
+orderSchema.index({ checkoutId: 1 });
+// Reconcile: "kaunse PENDING_PAYMENT orders purane ho gaye" (status ke andar statusChangedAt par range).
+orderSchema.index({ status: 1, statusChangedAt: 1 });
 
 // Payment ki koshish ka record. Mock provider ke saath bhi wahi shape. Card number/CVV KABHI nahi; sirf provider ka
 // reference aur status.

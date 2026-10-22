@@ -149,7 +149,7 @@ export function createProductRepository({ Product }) {
     },
 
     /**
-     * Checkout ke liye stock rokna (Phase 10 isse call karega): available = onHand - reserved >= quantity ho tabhi `reserved`
+     * Checkout ke liye stock rokna (Phase 10 ka checkout isse call karta hai): available = onHand - reserved >= quantity ho tabhi `reserved`
      * badhta hai. Do customers aakhri unit ek saath maangein to MongoDB ek hi document par updates ko serial karta hai: pehla
      * jeetta hai, doosre ka filter fail hota hai (null). Oversell isliye nahi hota; validator (reserved <= onHand) doosri deewar hai.
      * Sirf ACTIVE (public) product reserve hota hai.
@@ -174,6 +174,50 @@ export function createProductRepository({ Product }) {
         await Product.findOneAndUpdate(
           { _id: id, 'stock.reserved': { $gte: quantity } },
           { $inc: { 'stock.reserved': -quantity } },
+          { returnDocument: 'after' },
+        ).lean(),
+      );
+    },
+
+    /**
+     * Cart/checkout ke liye: kai products ek query mein (N+1 nahi), STATUS ki parwah kiye bina. Cart view ko archived/hold wale
+     * products bhi chahiye ("ab available nahi" dikhane ke liye), isliye public filter yahan nahi lagta; caller status dekhta hai.
+     * @returns {Promise<Map<string, object>>} productId (string) -> product
+     */
+    async findManyByIds(ids) {
+      if (ids.length === 0) return new Map();
+      const rows = await Product.find({ _id: { $in: ids } }).lean();
+      return new Map(rows.map((row) => [String(row._id), serialize(row)]));
+    },
+
+    /**
+     * Payment safal hone par roka hua stock "bik gaya" ban jaata hai: onHand aur reserved dono `quantity` se ghatte hain (ek hi
+     * atomic update). Available (onHand - reserved) isse nahi badalta; physical stock ab sach mein kam hua. Filter guard: reserved
+     * ya onHand quantity se kam ho to null (double commit / bug pakadne ke liye; service 409 deti hai).
+     */
+    async commitReservation({ id, quantity }) {
+      return serialize(
+        await Product.findOneAndUpdate(
+          {
+            _id: id,
+            'stock.reserved': { $gte: quantity },
+            'stock.onHand': { $gte: quantity },
+          },
+          { $inc: { 'stock.reserved': -quantity, 'stock.onHand': -quantity } },
+          { returnDocument: 'after' },
+        ).lean(),
+      );
+    },
+
+    /**
+     * Paid order cancel hone par (jo abhi ship nahi hua) maal wapas shelf par: onHand badhta hai. 1,000,000 ki upper limit seller ke
+     * stock adjust jaisi hai. Filter fail = null.
+     */
+    async restock({ id, quantity }) {
+      return serialize(
+        await Product.findOneAndUpdate(
+          { _id: id, $expr: { $lte: [{ $add: ['$stock.onHand', quantity] }, 1_000_000] } },
+          { $inc: { 'stock.onHand': quantity } },
           { returnDocument: 'after' },
         ).lean(),
       );
